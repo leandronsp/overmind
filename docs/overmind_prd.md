@@ -10,7 +10,7 @@ The GUI with windows and mouse has served us well. But as AI agents become capab
 
 Overmind is a bi-modal runtime for AI agents: it helps agents work faster and more efficiently, and helps humans visualize and understand what is happening inside the machine. Think of it as Kubernetes for AI agents --- a standalone infrastructure layer that treats agents as first-class processes with scheduling, supervision, observability, and shared memory.
 
-The closest analogy in the developer world: k9s gives you a tower-of-control over Kubernetes pods. Overmind gives you the same over AI agent sessions --- with restart policies, log streaming, worktree isolation, database isolation, and a shared memory layer that makes the entire team smarter over time.
+The closest analogy in the developer world: k9s gives you a tower-of-control over Kubernetes pods. Overmind gives you the same over AI agent missions --- with restart policies, log streaming, worktree isolation, database isolation, and a shared memory layer that makes the entire team smarter over time.
 
 ## 2. Problem Statement
 
@@ -20,7 +20,7 @@ Developers running multiple AI agents today manage them with tmux, bash scripts,
 - Logs are scattered across terminal windows with no centralized view or filtering.
 - Multiple agents on the same repo conflict --- same ports, same database, same working directory.
 - No way to send a message to a running agent without interrupting it.
-- No memory sharing between agents or between dev sessions --- the team's accumulated knowledge lives only in CLAUDE.md files that are static and version-controlled, not dynamic.
+- No memory sharing between agents or between dev missions --- the team's accumulated knowledge lives only in CLAUDE.md files that are static and version-controlled, not dynamic.
 - No primitives for recurring tasks (cron), one-shot jobs, or fleet management.
 
 The gap the market has confirmed but not closed: no tool connects worktree code isolation with full environment isolation (database, ports, services). DevTree attempted it and failed. The Upsun developer blog explicitly listed this as the unsolved problem as of February 2026.
@@ -31,9 +31,9 @@ Overmind is a local-first runtime (with optional distributed Cortex) that:
 
 - Treats every AI agent as a supervised process with lifecycle management
 - Provides worktree isolation as a mandatory design decision, not an option
-- Automatically isolates databases and services per session via Docker and dynamic port allocation
-- Streams logs centrally with session tagging and human-injected message markers
-- Maintains a shared Akasha (knowledge store) that accumulates codebase understanding across sessions and team members
+- Automatically isolates databases and services per mission via Docker and dynamic port allocation
+- Streams logs centrally with mission tagging and human-injected message markers
+- Maintains a shared Akasha (knowledge store) that accumulates codebase understanding across missions and team members
 - Exposes a k9s-inspired TUI and a LiveView web dashboard for human observation and intervention
 
 ## 4. Core Primitives (k8s Mapping)
@@ -43,21 +43,21 @@ Overmind is a local-first runtime (with optional distributed Cortex) that:
 | Cluster | Swarm | The full set of resources available to run agents |
 | Node | Hive | A machine where agents execute. Runs the Hive Agent process. |
 | Namespace | Colony | Logical grouping --- e.g. 'work', 'personal', 'research' |
-| Pod | Session | One agent instantiated running one task. Ephemeral. |
+| Pod | Mission | One agent instantiated running one task. Ephemeral. |
 | Container | Agent | Definition of what runs: command, system prompt, tools |
-| Deployment | Fleet | Desired state: keep N Sessions of this Agent alive |
-| ReplicaSet | Pack | Observed state: the actual running Sessions of a Fleet |
-| StatefulSet | Lineage | Agent with persistent identity and memory between Sessions |
+| Deployment | Fleet | Desired state: keep N Missions of this Agent alive |
+| ReplicaSet | Pack | Observed state: the actual running Missions of a Fleet |
+| StatefulSet | Lineage | Agent with persistent identity and memory between Missions |
 | Job | Quest | One-shot task: run, complete, done |
 | CronJob | Ritual | Recurring Quest with cron schedule |
 | DaemonSet | Sentinel | Agent that runs on every Hive (monitoring, health checks) |
-| Service | Channel | How other agents or humans communicate with a Session |
+| Service | Channel | How other agents or humans communicate with a Mission |
 | Ingress | Gateway | External entry point to the Swarm |
 | ConfigMap | Context | Non-secret config injected into an Agent at runtime |
 | Secret | Vault | API keys, tokens, credentials |
-| Volume | Memory | Persistent storage mounted into a Session |
+| Volume | Memory | Persistent storage mounted into a Mission |
 | PVC | MemoryClaim | Agent's declaration of persistent memory needs |
-| Scheduler | Oracle | Decides where and when Sessions run |
+| Scheduler | Oracle | Decides where and when Missions run |
 | Controller Manager | Weaver | Reconciliation loop: desired state vs actual state |
 | etcd | Akasha | Authoritative state store. ETS (hot) + SQLite (durable) |
 | API Server | Cortex | Central API all components use to read/write Akasha |
@@ -71,7 +71,7 @@ Overmind is a local-first runtime (with optional distributed Cortex) that:
 
 All components run in a single Elixir Mix application. Cortex and Hive are logically separated GenServers but physically co-located. No Phoenix required until the web dashboard milestone.
 
-Mix App -> Cortex (GenServer) -> Hive (GenServer) -> Session (GenServer) -> Port (OS process)
+Mix App -> Cortex (GenServer) -> Hive (GenServer) -> Mission (GenServer) -> Port (OS process)
 
 ### 5.2 Distributed Mode (M5+)
 
@@ -79,11 +79,11 @@ Cortex moves to a remote server (or stays local). Hive Agents run on each develo
 
 ### 5.3 Akasha
 
-Two-tier persistence: ETS for hot state (zero-latency reads for LiveView and TUI), SQLite for durability (event log, memory, session history). In distributed mode, SQLite is replaced by Postgres. Akasha is the source of truth the Weaver reconciliation loop reads from.
+Two-tier persistence: ETS for hot state (zero-latency reads for LiveView and TUI), SQLite for durability (event log, memory, mission history). In distributed mode, SQLite is replaced by Postgres. Akasha is the source of truth the Weaver reconciliation loop reads from.
 
 ### 5.4 Worktree + Environment Isolation
 
-Every Session is born in a git worktree. This is not optional --- it is the design. The `.overmind.yml` file at the project root declares services:
+Every Mission is born in a git worktree. This is not optional --- it is the design. The `.overmind.yml` file at the project root declares services:
 
 ```yaml
 services:
@@ -101,7 +101,7 @@ isolation:
   port_range: 3100-3999
 ```
 
-The `.overmind.yml` declares intent, not fixed values. Overmind's port registry allocates unique ports per Session and injects them as environment variables. The app never sees the values from the YAML --- it only sees the injected vars. Two Sessions of the same repo never conflict.
+The `.overmind.yml` declares intent, not fixed values. Overmind's port registry allocates unique ports per Mission and injects them as environment variables. The app never sees the values from the YAML --- it only sees the injected vars. Two Missions of the same repo never conflict.
 
 ## 6. Roadmap
 
@@ -114,20 +114,20 @@ M0 is the absolute minimum: spawn an agent and observe it. No worktree, no isola
 ### 7.1 Commands
 
 - `overmind run --agent <cmd> --project <path>` --- spawns process, captures stdout/stderr
-- `overmind ps` --- lists active sessions with status (running/crashed/idle) and uptime
-- `overmind logs <session-id>` --- real-time stream
-- `overmind stop <session-id>` --- graceful stop
-- `overmind kill <session-id>` --- force kill
+- `overmind ps` --- lists active missions with status (running/crashed/idle) and uptime
+- `overmind logs <mission-id>` --- real-time stream
+- `overmind stop <mission-id>` --- graceful stop
+- `overmind kill <mission-id>` --- force kill
 
 ### 7.2 Stack
 
 - Elixir + Mix (no Phoenix)
-- GenServer per Session --- wraps the Port (OS process)
-- ETS for hot state (active sessions, status, metadata)
+- GenServer per Mission --- wraps the Port (OS process)
+- ETS for hot state (active missions, status, metadata)
 - Burrito for standalone binary compilation
 - Owl or OptionParser for CLI
 
-### 7.3 Session Lifecycle
+### 7.3 Mission Lifecycle
 
 - STARTING -> spawns Port with correct cwd
 - RUNNING -> captures stdout/stderr, indexes in ETS
@@ -138,18 +138,18 @@ M0 is the absolute minimum: spawn an agent and observe it. No worktree, no isola
 
 M4 is the differentiating milestone. It solves the gap no existing project has closed.
 
-### 8.1 Session Lifecycle with Isolation
+### 8.1 Mission Lifecycle with Isolation
 
 1. Read `.overmind.yml` from the project
 2. Allocate unique ports in the Port Registry (ETS) for each declared service
-3. Start Docker containers for dependent services with names derived from the session-id
+3. Start Docker containers for dependent services with names derived from the mission-id
 4. Create git worktree: `git worktree add .overmind/worktrees/<branch> -b <branch>`
 5. Spawn main process with all env vars injected
 6. Teardown: stop containers -> release ports -> prompt about worktree (keep/remove)
 
 ### 8.2 Port Registry
 
-ETS table `:port_registry` with schema `{port, session_id, service_name, allocated_at}`. Before each Session, scans the range declared in `.overmind.yml` and allocates free ports. Releases on teardown.
+ETS table `:port_registry` with schema `{port, mission_id, service_name, allocated_at}`. Before each Mission, scans the range declared in `.overmind.yml` and allocates free ports. Releases on teardown.
 
 ### 8.3 Apps without .overmind.yml
 
@@ -161,18 +161,18 @@ The long-term competitive differentiator. Codebase memory that grows with team u
 
 ### 9.1 What Akasha Stores
 
-- Session event log: which files were touched, which commands executed, which errors encountered
+- Mission event log: which files were touched, which commands executed, which errors encountered
 - Explicit memory: the agent writes decisions, identified patterns, codebase gotchas
 - Feature context: history of previous implementations of similar features
 - Semantic index: embeddings for search by meaning, not just keyword
 
 ### 9.2 Distribution Model
 
-The runtime (Hive, Sessions, worktrees) is always local. Akasha can be local (SQLite) or remote (Postgres + Cortex server). In remote mode, all team devs point to the same Cortex --- memories are shared, but code stays on each machine.
+The runtime (Hive, Missions, worktrees) is always local. Akasha can be local (SQLite) or remote (Postgres + Cortex server). In remote mode, all team devs point to the same Cortex --- memories are shared, but code stays on each machine.
 
 ### 9.3 Difference from CLAUDE.md
 
-CLAUDE.md is static, version-controlled in git, manually edited. Akasha is dynamic --- it grows during Sessions, is automatically consulted before each new Session, and is shared without friction. CLAUDE.md continues to exist for the dev's declarative intentions. Akasha captures the emergent knowledge from usage.
+CLAUDE.md is static, version-controlled in git, manually edited. Akasha is dynamic --- it grows during Missions, is automatically consulted before each new Mission, and is shared without friction. CLAUDE.md continues to exist for the dev's declarative intentions. Akasha captures the emergent knowledge from usage.
 
 ## 10. Competitive Analysis
 
@@ -196,7 +196,7 @@ Philosophy: OSS forever for the runtime. Revenue comes from the collaboration an
 
 Core runtime (M0-M4) remains MIT forever. Enterprise features are paid:
 
-- SSO and RBAC for teams (who can see which Colony, who can kill Sessions)
+- SSO and RBAC for teams (who can see which Colony, who can kill Missions)
 - Complete and immutable Akasha audit log (compliance)
 - Policy engine: rules for what agents can and cannot do
 - Dedicated support SLA
@@ -213,7 +213,7 @@ This is the most natural and defensible model. Anthropic can't replace you here 
 
 ### 11.3 Hosted Hive
 
-For teams that want agents running on a shared server without managing infrastructure. Managed Hives in the cloud. Pay-per-session or monthly subscription. Use cases: agents running 24/7, CI/CD agents, monitoring agents.
+For teams that want agents running on a shared server without managing infrastructure. Managed Hives in the cloud. Pay-per-mission or monthly subscription. Use cases: agents running 24/7, CI/CD agents, monitoring agents.
 
 ### 11.4 Genome Marketplace
 
@@ -270,20 +270,20 @@ The BEAM already has native distribution. Two Elixir nodes communicate via Node.
 
 **Worktree as mandatory design, not an option --- why?**
 
-Every Session without a worktree is an agent that can conflict with another. If it's an option, it will be disabled. If it's a design decision, it eliminates an entire class of bugs and conflicts from the start. The cost (git worktree add is a fast operation) is insignificant compared to the benefit.
+Every Mission without a worktree is an agent that can conflict with another. If it's an option, it will be disabled. If it's a design decision, it eliminates an entire class of bugs and conflicts from the start. The cost (git worktree add is a fast operation) is insignificant compared to the benefit.
 
 **/etc/hosts for domain isolation --- good practice?**
 
-Not for routine use. Requires sudo, is global (risk of leak between Sessions), and has race conditions if multiple processes write simultaneously. The correct alternative is dynamic port allocation with injected env vars. Local DNS via dnsmasq/resolver could be a future opt-in feature, but it's not the default.
+Not for routine use. Requires sudo, is global (risk of leak between Missions), and has race conditions if multiple processes write simultaneously. The correct alternative is dynamic port allocation with injected env vars. Local DNS via dnsmasq/resolver could be a future opt-in feature, but it's not the default.
 
 **Does the port registry resolve conflicts between two agents on the same repo?**
 
-Yes. The `.overmind.yml` declares intent (port 3000), not a fixed value. The port registry allocates dynamically before each Session and injects the vars. The app never sees the YAML value --- it only sees $PORT with a unique, free value. Two agents on the same repo never conflict because the registry guarantees uniqueness.
+Yes. The `.overmind.yml` declares intent (port 3000), not a fixed value. The port registry allocates dynamically before each Mission and injects the vars. The app never sees the YAML value --- it only sees $PORT with a unique, free value. Two agents on the same repo never conflict because the registry guarantees uniqueness.
 
 ## 15. Next Steps
 
 - Create public GitHub repository with README explaining the vision
-- Implement M0: Session GenServer + Port + ETS + basic CLI
+- Implement M0: Mission GenServer + Port + ETS + basic CLI
 - Record Live 1: present the problem, the roadmap, the decisions --- plant the flag
 - Iterate M1 and M2 in the next livestreams
 - Write technical post about the decision to use BEAM for agent scheduling

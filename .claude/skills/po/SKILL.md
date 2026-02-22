@@ -35,7 +35,7 @@ feat(<module>): <short description>
 ```
 
 Examples:
-- `feat(session): add genserver for agent lifecycle`
+- `feat(mission): add genserver for agent lifecycle`
 - `feat(cli): implement ps command`
 - `feat(supervisor): add restart policies`
 - `fix(cli): handle missing subcommand gracefully`

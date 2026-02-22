@@ -9,4 +9,4 @@ overmind stop <id>
 overmind kill <id>
 
 Q&A chat
-- Sessions poderiam ser "Mission" talvez?
+- Sessions renomeado para "Mission"
