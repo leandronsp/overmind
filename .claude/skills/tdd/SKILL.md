@@ -92,7 +92,7 @@ Follow all codebase conventions from `CLAUDE.md`:
 - Self-documenting function names, minimal comments
 - Idiomatic Elixir — pattern matching, pipelines, supervision trees
 - No external deps unless strictly necessary
-- `@spec` on all public functions, `@type t` on structs (see Typespecs in CLAUDE.md)
+- Typespecs: `@spec` on public client API, `@type t` on structs, skip GenServer callbacks. Consult `CLAUDE.md` Type Reference table for correct types (e.g. `String.t()` not `string()`, `GenServer.on_start()` for start_link returns, `port()` for Port refs)
 
 Run: `mix test`
 

@@ -42,10 +42,32 @@ mix test             # run tests
 
 Typespecs serve as deterministic constraints on LLM-generated code — the type checker rejects invalid output the same way a compiler rejects syntax errors.
 
-- `@type t` on every struct
-- `@spec` on all public functions (skip private helpers)
-- GenServer callbacks: always spec return tuples explicitly
+### Rules
+
+- `@type t :: %__MODULE__{}` on every struct
+- `@spec` on all public client API functions (skip private helpers)
+- Do NOT spec GenServer callbacks (`handle_call`, `handle_cast`, `handle_info`, `init`) — the behaviour's `@callback` specs handle this via `@impl true`
 - Skip specs on CLI glue code and test helpers
+
+### Type reference
+
+| Use this | Not this | For |
+|---|---|---|
+| `String.t()` | `string()`, `binary()` | UTF-8 strings |
+| `binary()` | | Raw bytes, Port output |
+| `pid()` | `PID` | Process identifiers |
+| `atom()` | | Atoms like `:running`, `:crashed` |
+| `integer()` | `int()` | Integers |
+| `non_neg_integer()` | | Counts, sizes, exit codes |
+| `boolean()` | | true/false |
+| `port()` | | Elixir Port references |
+| `GenServer.on_start()` | | Return of `start_link` |
+| `DynamicSupervisor.on_start_child()` | | Return of `start_child` |
+| `term()` | `any()` | Unknown/generic values |
+| `keyword()` | | Keyword lists `[key: val]` |
+| `[type()]` | `list(type())` | Lists |
+| `{:ok, t()} \| {:error, term()}` | | Tagged tuples (ok/error) |
+| `MyModule.t()` | | Custom struct types |
 
 ## Git
 
