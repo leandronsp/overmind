@@ -14,6 +14,7 @@ defmodule Overmind.MixProject do
 
   def application do
     [
+      mod: {Overmind.Application, []},
       extra_applications: [:logger]
     ]
   end
