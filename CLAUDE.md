@@ -52,3 +52,6 @@ mix test             # run tests
 - **M4** — Full Isolation: worktree + port allocation + Docker
 - **M5** — Shared Akasha: distributed memory
 - **M6** — Web Dashboard: Phoenix LiveView
+
+For detailed roadmap see `ROADMAP.md`. Full PRD at `docs/overmind_prd.md`.
+
