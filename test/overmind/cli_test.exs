@@ -4,15 +4,15 @@ defmodule Overmind.CLITest do
   import ExUnit.CaptureIO
 
   setup do
-    cleanup_sessions()
+    cleanup_missions()
     :ok
   end
 
-  defp cleanup_sessions do
-    :ets.match(:overmind_sessions, {:"$1", :_, :_, :running, :_})
+  defp cleanup_missions do
+    :ets.match(:overmind_missions, {:"$1", :_, :_, :running, :_})
     |> List.flatten()
     |> Enum.each(fn id ->
-      case :ets.lookup(:overmind_sessions, id) do
+      case :ets.lookup(:overmind_missions, id) do
         [{_, pid, _, :running, _}] ->
           try do
             GenServer.stop(pid, :normal, 100)
@@ -25,7 +25,7 @@ defmodule Overmind.CLITest do
       end
     end)
 
-    :ets.delete_all_objects(:overmind_sessions)
+    :ets.delete_all_objects(:overmind_missions)
     Process.sleep(10)
   end
 
@@ -41,9 +41,9 @@ defmodule Overmind.CLITest do
     assert output =~ "Usage:"
   end
 
-  test "run command starts session and prints ID" do
+  test "run command starts mission and prints ID" do
     output = capture_io(fn -> Overmind.CLI.main(["run", "--agent", "sleep 60"]) end)
-    assert output =~ "Started session"
+    assert output =~ "Started mission"
   end
 
   test "run without --agent prints error" do
@@ -51,7 +51,7 @@ defmodule Overmind.CLITest do
     assert output =~ "Missing --agent"
   end
 
-  test "ps command lists sessions" do
+  test "ps command lists missions" do
     {:ok, _id} = Overmind.run("sleep 60")
     Process.sleep(50)
 
@@ -60,13 +60,13 @@ defmodule Overmind.CLITest do
     assert output =~ "running"
   end
 
-  test "ps with no sessions prints header only" do
+  test "ps with no missions prints header only" do
     output = capture_io(fn -> Overmind.CLI.main(["ps"]) end)
     assert output =~ "ID"
     assert output =~ "COMMAND"
   end
 
-  test "logs command prints session logs" do
+  test "logs command prints mission logs" do
     {:ok, id} = Overmind.run("echo cli-test")
     Process.sleep(200)
 
@@ -79,7 +79,7 @@ defmodule Overmind.CLITest do
     assert output =~ "not found"
   end
 
-  test "stop command stops session" do
+  test "stop command stops mission" do
     {:ok, id} = Overmind.run("sleep 60")
     Process.sleep(50)
 
@@ -87,7 +87,7 @@ defmodule Overmind.CLITest do
     assert output =~ "Stopped"
   end
 
-  test "kill command kills session" do
+  test "kill command kills mission" do
     {:ok, id} = Overmind.run("sleep 60")
     Process.sleep(50)
 

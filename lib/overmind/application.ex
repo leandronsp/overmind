@@ -4,10 +4,10 @@ defmodule Overmind.Application do
 
   @impl true
   def start(_type, _args) do
-    :ets.new(:overmind_sessions, [:set, :public, :named_table])
+    :ets.new(:overmind_missions, [:set, :public, :named_table])
 
     children = [
-      {DynamicSupervisor, name: Overmind.SessionSupervisor, strategy: :one_for_one}
+      {DynamicSupervisor, name: Overmind.MissionSupervisor, strategy: :one_for_one}
     ]
 
     opts = [strategy: :one_for_one, name: Overmind.Supervisor]

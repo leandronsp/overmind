@@ -1,8 +1,8 @@
-defmodule Overmind.Session do
+defmodule Overmind.Mission do
   @moduledoc false
   use GenServer
 
-  defstruct [:id, :command, :port, :os_pid, :started_at, logs: ""]
+  defstruct [:id, :command, :port, :os_pid, :started_at, logs: "", stopping: false]
 
   @type t :: %__MODULE__{
           id: String.t(),
@@ -10,7 +10,8 @@ defmodule Overmind.Session do
           port: port() | nil,
           os_pid: non_neg_integer(),
           started_at: integer(),
-          logs: String.t()
+          logs: String.t(),
+          stopping: boolean()
         }
 
   @spec generate_id() :: String.t()
@@ -37,7 +38,7 @@ defmodule Overmind.Session do
 
   @spec get_logs(String.t()) :: {:ok, String.t()} | {:error, :not_found}
   def get_logs(id) do
-    case :ets.lookup(:overmind_sessions, id) do
+    case :ets.lookup(:overmind_missions, id) do
       [{^id, pid, _, :running, _}] ->
         try do
           {:ok, GenServer.call(pid, :get_logs)}
@@ -46,7 +47,7 @@ defmodule Overmind.Session do
         end
 
       [{^id, _, _, _status, _}] ->
-        case :ets.lookup(:overmind_sessions, {:logs, id}) do
+        case :ets.lookup(:overmind_missions, {:logs, id}) do
           [{{:logs, ^id}, logs}] -> {:ok, logs}
           [] -> {:ok, ""}
         end
@@ -56,12 +57,12 @@ defmodule Overmind.Session do
     end
   end
 
-  @spec signal(String.t(), :sigterm | :sigkill) :: :ok | {:error, :not_found | :not_running}
-  def signal(id, sig) do
-    case :ets.lookup(:overmind_sessions, id) do
+  @spec stop(String.t()) :: :ok | {:error, :not_found | :not_running}
+  def stop(id) do
+    case :ets.lookup(:overmind_missions, id) do
       [{^id, pid, _, :running, _}] ->
         try do
-          GenServer.call(pid, {:signal, sig})
+          GenServer.call(pid, {:stop, :sigterm})
         catch
           :exit, _ -> {:error, :not_running}
         end
@@ -74,9 +75,35 @@ defmodule Overmind.Session do
     end
   end
 
+  @spec kill(String.t()) :: :ok | {:error, :not_found}
+  def kill(id) do
+    case :ets.lookup(:overmind_missions, id) do
+      [{^id, pid, _, :running, _}] ->
+        try do
+          GenServer.call(pid, {:kill, :sigkill})
+        catch
+          :exit, _ ->
+            cleanup(id)
+            :ok
+        end
+
+      [{^id, _, _, _, _}] ->
+        cleanup(id)
+        :ok
+
+      [] ->
+        {:error, :not_found}
+    end
+  end
+
+  defp cleanup(id) do
+    :ets.delete(:overmind_missions, id)
+    :ets.delete(:overmind_missions, {:logs, id})
+  end
+
   @spec get_info(String.t()) :: {:ok, map()} | {:error, :not_found}
   def get_info(id) do
-    case :ets.lookup(:overmind_sessions, id) do
+    case :ets.lookup(:overmind_missions, id) do
       [{^id, pid, command, status, started_at}] when status == :running ->
         os_pid = GenServer.call(pid, :get_os_pid)
         {:ok, %{id: id, command: command, status: status, started_at: started_at, os_pid: os_pid}}
@@ -96,7 +123,7 @@ defmodule Overmind.Session do
 
     {:os_pid, os_pid} = Port.info(port, :os_pid)
     now = System.system_time(:second)
-    :ets.insert(:overmind_sessions, {id, self(), command, :running, now})
+    :ets.insert(:overmind_missions, {id, self(), command, :running, now})
 
     {:ok,
      %__MODULE__{
@@ -119,12 +146,16 @@ defmodule Overmind.Session do
   end
 
   @impl true
-  def handle_call({:signal, sig}, _from, state) do
-    flag = if sig == :sigkill, do: "-9", else: "-15"
-    os_pid_str = Integer.to_string(state.os_pid)
-    System.cmd("kill", [flag, os_pid_str])
-    :ets.delete(:overmind_sessions, state.id)
-    :ets.delete(:overmind_sessions, {:logs, state.id})
+  def handle_call({:stop, :sigterm}, _from, state) do
+    System.cmd("kill", ["-15", Integer.to_string(state.os_pid)])
+    {:reply, :ok, %{state | stopping: true}}
+  end
+
+  @impl true
+  def handle_call({:kill, :sigkill}, _from, state) do
+    System.cmd("kill", ["-9", Integer.to_string(state.os_pid)])
+    :ets.delete(:overmind_missions, state.id)
+    :ets.delete(:overmind_missions, {:logs, state.id})
     {:stop, :normal, :ok, %{state | port: nil}}
   end
 
@@ -135,16 +166,22 @@ defmodule Overmind.Session do
 
   @impl true
   def handle_info({port, {:exit_status, code}}, %{port: port} = state) do
-    status = if code == 0, do: :stopped, else: :crashed
-    :ets.insert(:overmind_sessions, {state.id, self(), state.command, status, state.started_at})
+    status =
+      cond do
+        state.stopping -> :stopped
+        code == 0 -> :stopped
+        true -> :crashed
+      end
+
+    :ets.insert(:overmind_missions, {state.id, self(), state.command, status, state.started_at})
     {:stop, :normal, %{state | port: nil}}
   end
 
   @impl true
   def terminate(_reason, state) do
-    case :ets.lookup(:overmind_sessions, state.id) do
+    case :ets.lookup(:overmind_missions, state.id) do
       [{_, _, _, status, _}] when status in [:stopped, :crashed] ->
-        :ets.insert(:overmind_sessions, {{:logs, state.id}, state.logs})
+        :ets.insert(:overmind_missions, {{:logs, state.id}, state.logs})
 
       _ ->
         :ok

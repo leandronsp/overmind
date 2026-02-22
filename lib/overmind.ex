@@ -1,16 +1,16 @@
 defmodule Overmind do
   @moduledoc false
 
-  alias Overmind.Session
+  alias Overmind.Mission
 
   @spec run(String.t()) :: {:ok, String.t()} | {:error, term()}
   def run(""), do: {:error, :empty_command}
 
   def run(command) do
-    id = Session.generate_id()
-    spec = {Session, id: id, command: command}
+    id = Mission.generate_id()
+    spec = {Mission, id: id, command: command}
 
-    case DynamicSupervisor.start_child(Overmind.SessionSupervisor, spec) do
+    case DynamicSupervisor.start_child(Overmind.MissionSupervisor, spec) do
       {:ok, _pid} -> {:ok, id}
       {:error, reason} -> {:error, reason}
     end
@@ -20,7 +20,7 @@ defmodule Overmind do
   def ps do
     now = System.system_time(:second)
 
-    :ets.tab2list(:overmind_sessions)
+    :ets.tab2list(:overmind_missions)
     |> Enum.filter(fn
       {{:logs, _}, _} -> false
       {_id, _pid, _cmd, _status, _started} -> true
@@ -32,16 +32,16 @@ defmodule Overmind do
 
   @spec logs(String.t()) :: {:ok, String.t()} | {:error, :not_found}
   def logs(id) do
-    Session.get_logs(id)
+    Mission.get_logs(id)
   end
 
   @spec stop(String.t()) :: :ok | {:error, :not_found | :not_running}
   def stop(id) do
-    Session.signal(id, :sigterm)
+    Mission.stop(id)
   end
 
-  @spec kill(String.t()) :: :ok | {:error, :not_found | :not_running}
+  @spec kill(String.t()) :: :ok | {:error, :not_found}
   def kill(id) do
-    Session.signal(id, :sigkill)
+    Mission.kill(id)
   end
 end

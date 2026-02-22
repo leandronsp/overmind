@@ -4,6 +4,9 @@ defmodule Overmind.CLI do
   @spec main([String.t()]) :: :ok
   def main(args) do
     case args do
+      ["start"] -> Overmind.Daemon.start()
+      ["shutdown"] -> Overmind.Daemon.shutdown()
+      ["__daemon__"] -> Overmind.Daemon.run_daemon()
       ["run" | rest] -> cmd_run(rest)
       ["ps"] -> cmd_ps()
       ["logs", id] -> cmd_logs(id)
@@ -22,54 +25,86 @@ defmodule Overmind.CLI do
         IO.puts("Missing --agent option")
 
       command ->
-        case Overmind.run(command) do
-          {:ok, id} -> IO.puts("Started session #{id}")
+        case execute(Overmind, :run, [command]) do
+          {:ok, id} -> IO.puts("Started mission #{id}")
           {:error, reason} -> IO.puts("Error: #{inspect(reason)}")
+          :daemon_error -> :ok
         end
     end
   end
 
   defp cmd_ps do
-    sessions = Overmind.ps()
+    case execute(Overmind, :ps, []) do
+      :daemon_error ->
+        :ok
 
-    IO.puts(
-      String.pad_trailing("ID", 12) <>
-        String.pad_trailing("STATUS", 12) <>
-        String.pad_trailing("UPTIME", 10) <>
-        "COMMAND"
-    )
+      missions ->
+        IO.puts(
+          String.pad_trailing("ID", 12) <>
+            String.pad_trailing("STATUS", 12) <>
+            String.pad_trailing("UPTIME", 10) <>
+            "COMMAND"
+        )
 
-    Enum.each(sessions, fn s ->
-      IO.puts(
-        String.pad_trailing(s.id, 12) <>
-          String.pad_trailing(Atom.to_string(s.status), 12) <>
-          String.pad_trailing(format_uptime(s.uptime), 10) <>
-          s.command
-      )
-    end)
+        Enum.each(missions, fn m ->
+          IO.puts(
+            String.pad_trailing(m.id, 12) <>
+              String.pad_trailing(Atom.to_string(m.status), 12) <>
+              String.pad_trailing(format_uptime(m.uptime), 10) <>
+              m.command
+          )
+        end)
+    end
   end
 
   defp cmd_logs(id) do
-    case Overmind.logs(id) do
+    case execute(Overmind, :logs, [id]) do
       {:ok, logs} -> IO.write(logs)
-      {:error, :not_found} -> IO.puts("Session #{id} not found")
+      {:error, :not_found} -> IO.puts("Mission #{id} not found")
+      :daemon_error -> :ok
     end
   end
 
   defp cmd_stop(id) do
-    case Overmind.stop(id) do
-      :ok -> IO.puts("Stopped session #{id}")
-      {:error, :not_found} -> IO.puts("Session #{id} not found")
-      {:error, :not_running} -> IO.puts("Session #{id} is not running")
+    case execute(Overmind, :stop, [id]) do
+      :ok -> IO.puts("Stopped mission #{id}")
+      {:error, :not_found} -> IO.puts("Mission #{id} not found")
+      {:error, :not_running} -> IO.puts("Mission #{id} is not running")
+      :daemon_error -> :ok
     end
   end
 
   defp cmd_kill(id) do
-    case Overmind.kill(id) do
-      :ok -> IO.puts("Killed session #{id}")
-      {:error, :not_found} -> IO.puts("Session #{id} not found")
-      {:error, :not_running} -> IO.puts("Session #{id} is not running")
+    case execute(Overmind, :kill, [id]) do
+      :ok -> IO.puts("Killed mission #{id}")
+      {:error, :not_found} -> IO.puts("Mission #{id} not found")
+      :daemon_error -> :ok
     end
+  end
+
+  defp execute(mod, fun, args) do
+    if direct_mode?() do
+      apply(mod, fun, args)
+    else
+      with :ok <- Overmind.Daemon.connect() do
+        case Overmind.Daemon.rpc(mod, fun, args) do
+          {:error, {:rpc_failed, reason}} ->
+            IO.puts("RPC error: #{inspect(reason)}")
+            :daemon_error
+
+          result ->
+            result
+        end
+      else
+        {:error, :not_running} ->
+          IO.puts("Daemon not running. Start with: overmind start")
+          :daemon_error
+      end
+    end
+  end
+
+  defp direct_mode? do
+    Application.get_env(:overmind, :direct_mode, false)
   end
 
   defp print_usage do
@@ -79,11 +114,13 @@ defmodule Overmind.CLI do
     Usage: overmind <command> [options]
 
     Commands:
+      start               Start the daemon
+      shutdown            Stop the daemon
       run --agent <cmd>   Spawn an agent process
-      ps                  List all sessions
-      logs <id>           Show session logs
-      stop <id>           Stop a session (SIGTERM)
-      kill <id>           Kill a session (SIGKILL)\
+      ps                  List all missions
+      logs <id>           Show mission logs
+      stop <id>           Stop a mission (SIGTERM)
+      kill <id>           Kill a mission (SIGKILL)\
     """)
   end
 
