@@ -19,6 +19,8 @@ defmodule Overmind.MixProject do
   end
 
   defp deps do
-    []
+    [
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
+    ]
   end
 end

@@ -92,6 +92,7 @@ Follow all codebase conventions from `CLAUDE.md`:
 - Self-documenting function names, minimal comments
 - Idiomatic Elixir — pattern matching, pipelines, supervision trees
 - No external deps unless strictly necessary
+- `@spec` on all public functions, `@type t` on structs (see Typespecs in CLAUDE.md)
 
 Run: `mix test`
 
@@ -132,6 +133,7 @@ For each task:
 - [ ] Confirm tests still pass
 - [ ] Repeat for next behavior increment
 - [ ] All task behaviors covered
+- [ ] `mix dialyzer` passes (type constraint check)
 - [ ] Commit with `/commit`
 
 ## Pipeline

@@ -35,7 +35,17 @@ mix test             # run tests
 
 - Self-documenting function names, minimal comments
 - `mix test` must pass before committing
+- `mix dialyzer` must pass before committing
 - No external deps unless strictly necessary
+
+## Typespecs
+
+Typespecs serve as deterministic constraints on LLM-generated code — the type checker rejects invalid output the same way a compiler rejects syntax errors.
+
+- `@type t` on every struct
+- `@spec` on all public functions (skip private helpers)
+- GenServer callbacks: always spec return tuples explicitly
+- Skip specs on CLI glue code and test helpers
 
 ## Git
 

@@ -26,6 +26,7 @@ Types: `feat:`, `fix:`, `refactor:`, `test:`, `chore:`, `docs:`
 
 ```bash
 mix test
+mix dialyzer
 git diff --staged
 ```
 
