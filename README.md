@@ -9,9 +9,11 @@ A local-first runtime that treats AI agents as supervised processes with schedul
 Requires Erlang/OTP 28+ and Elixir 1.19.5+.
 
 ```bash
-mix escript.build
-./overmind
+mix build      # compile escript binary
+./overmind     # run CLI
 ```
+
+`mix test` automatically rebuilds the escript before running, so the binary is never stale.
 
 ## Roadmap
 

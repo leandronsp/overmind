@@ -26,10 +26,12 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 ## Build & Run
 
 ```bash
-mix escript.build    # compile binary
+mix build            # compile escript binary (alias for mix escript.build)
 ./overmind           # run CLI
-mix test             # run tests
+mix test             # run tests (auto-rebuilds escript first)
 ```
+
+`mix test` always rebuilds the escript before running tests — no stale binary risk.
 
 ## Code Standards
 
