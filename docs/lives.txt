@@ -1,0 +1,12 @@
+Live 22/Fev/2026
+
+Acceptance Criteria
+
+overmind run <command> [--cwd <path>]
+overmind ps
+overmind logs <id> [--follow]
+overmind stop <id>
+overmind kill <id>
+
+Q&A chat
+- Sessions poderiam ser "Mission" talvez?

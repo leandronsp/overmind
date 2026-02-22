@@ -7,3 +7,4 @@ erl_crash.dump
 overmind-*.tar
 /tmp/
 .elixir_ls/
+/overmind
