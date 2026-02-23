@@ -8,13 +8,27 @@ defmodule Overmind.MixProject do
       elixir: "~> 1.19.5",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      escript: [main_module: Overmind.CLI]
+      escript: [main_module: Overmind.CLI],
+      elixirc_paths: elixirc_paths(Mix.env()),
+      aliases: aliases()
     ]
   end
 
   def application do
     [
+      mod: {Overmind.Application, []},
       extra_applications: [:logger]
+    ]
+  end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
+
+  defp aliases do
+    [
+      build: ["escript.build"],
+      test: ["escript.build", "test"],
+      e2e: ["cmd ./test_e2e.sh"]
     ]
   end
 

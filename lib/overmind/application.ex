@@ -4,7 +4,11 @@ defmodule Overmind.Application do
 
   @impl true
   def start(_type, _args) do
-    children = []
+    :ets.new(:overmind_missions, [:set, :public, :named_table])
+
+    children = [
+      {DynamicSupervisor, name: Overmind.MissionSupervisor, strategy: :one_for_one}
+    ]
 
     opts = [strategy: :one_for_one, name: Overmind.Supervisor]
     Supervisor.start_link(children, opts)

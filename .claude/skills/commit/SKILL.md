@@ -33,7 +33,7 @@ git diff --staged
 ## Examples
 
 ```bash
-git commit -m "feat: add session genserver"
+git commit -m "feat: add mission genserver"
 git commit -m "fix: handle port exit on crash"
 git commit -m "refactor: extract ets state into module"
 ```
