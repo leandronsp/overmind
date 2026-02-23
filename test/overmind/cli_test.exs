@@ -57,7 +57,9 @@ defmodule Overmind.CLITest do
 
   test "logs command prints mission logs" do
     {:ok, id} = Overmind.run("echo cli-test")
-    Process.sleep(200)
+    [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+    ref = Process.monitor(pid)
+    assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
     output = capture_io(fn -> Overmind.CLI.main(["logs", id]) end)
     assert output =~ "cli-test"

@@ -23,9 +23,9 @@ defmodule OvermindTest do
   describe "run/2 with provider" do
     test "provider stores original command in ETS" do
       {:ok, id} = Overmind.run("echo hello", Overmind.Provider.TestClaude)
-      Process.sleep(100)
-
-      [{^id, _, "echo hello", _, _}] = :ets.lookup(:overmind_missions, id)
+      [{^id, pid, "echo hello", _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
     end
 
     test "error for empty command with provider" do
@@ -52,7 +52,9 @@ defmodule OvermindTest do
 
     test "includes naturally exited missions" do
       {:ok, id} = Overmind.run("true")
-      Process.sleep(100)
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
       missions = Overmind.ps()
       assert Enum.any?(missions, fn m -> m.id == id and m.status == :stopped end)
@@ -60,7 +62,9 @@ defmodule OvermindTest do
 
     test "does not include raw_events tuples" do
       {:ok, id} = Overmind.run("echo test")
-      Process.sleep(200)
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
       missions = Overmind.ps()
       assert Enum.all?(missions, fn m -> is_binary(m.id) end)
@@ -79,7 +83,9 @@ defmodule OvermindTest do
 
     test "returns logs from dead mission" do
       {:ok, id} = Overmind.run("echo dead")
-      Process.sleep(200)
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
       {:ok, logs} = Overmind.logs(id)
       assert logs =~ "dead"
@@ -93,7 +99,9 @@ defmodule OvermindTest do
   describe "raw_events/1" do
     test "returns empty list for raw provider mission" do
       {:ok, id} = Overmind.run("echo hello")
-      Process.sleep(200)
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
       {:ok, events} = Overmind.raw_events(id)
       assert events == []
@@ -107,10 +115,11 @@ defmodule OvermindTest do
   describe "stop/1" do
     test "stops a running mission, mission stays in ETS as :stopped" do
       {:ok, id} = Overmind.run("sleep 60")
-      Process.sleep(50)
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
 
       assert :ok = Overmind.stop(id)
-      Process.sleep(200)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
 
       [{^id, _, _, :stopped, _}] = :ets.lookup(:overmind_missions, id)
     end
@@ -121,7 +130,9 @@ defmodule OvermindTest do
 
     test "error for already stopped mission" do
       {:ok, id} = Overmind.run("true")
-      Process.sleep(200)
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
       assert {:error, :not_running} = Overmind.stop(id)
     end
@@ -130,27 +141,31 @@ defmodule OvermindTest do
   describe "kill/1" do
     test "force-kills a running mission and removes from ETS" do
       {:ok, id} = Overmind.run("sleep 60")
-      Process.sleep(50)
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
 
       assert :ok = Overmind.kill(id)
-      Process.sleep(100)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
       assert :ets.lookup(:overmind_missions, id) == []
     end
 
     test "works on SIGTERM-resistant processes" do
       {:ok, id} = Overmind.run("sh -c 'trap \"\" TERM; sleep 60'")
-      Process.sleep(50)
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
 
       assert :ok = Overmind.kill(id)
-      Process.sleep(100)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
       assert :ets.lookup(:overmind_missions, id) == []
     end
 
     test "kills a stopped mission and removes from ETS" do
       {:ok, id} = Overmind.run("true")
-      Process.sleep(200)
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
       assert :ok = Overmind.kill(id)
       assert :ets.lookup(:overmind_missions, id) == []

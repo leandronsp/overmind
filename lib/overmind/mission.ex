@@ -93,7 +93,7 @@ defmodule Overmind.Mission do
   def get_info(id) do
     case Store.lookup(id) do
       {:running, pid, command, started_at} ->
-        {:ok, os_pid} = Store.safe_call(pid, :get_os_pid)
+        os_pid = fetch_os_pid(pid)
         {:ok, %{id: id, command: command, status: :running, started_at: started_at, os_pid: os_pid}}
 
       {:exited, status, command, started_at} ->
@@ -124,6 +124,13 @@ defmodule Overmind.Mission do
     case Store.safe_call(pid, {:kill, :sigkill}) do
       {:ok, result} -> result
       :dead -> Store.cleanup(id)
+    end
+  end
+
+  defp fetch_os_pid(pid) do
+    case Store.safe_call(pid, :get_os_pid) do
+      {:ok, os_pid} -> os_pid
+      :dead -> nil
     end
   end
 

@@ -93,8 +93,9 @@ defmodule Overmind.MissionTest do
   describe "get_logs/1" do
     test "returns stdout from echo command" do
       id = Mission.generate_id()
-      {:ok, _pid} = Mission.start_link(id: id, command: "echo hello")
-      Process.sleep(100)
+      {:ok, pid} = Mission.start_link(id: id, command: "echo hello")
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
       {:ok, logs} = Mission.get_logs(id)
       assert logs =~ "hello"
@@ -102,8 +103,9 @@ defmodule Overmind.MissionTest do
 
     test "captures stderr" do
       id = Mission.generate_id()
-      {:ok, _pid} = Mission.start_link(id: id, command: "sh -c 'echo error >&2'")
-      Process.sleep(100)
+      {:ok, pid} = Mission.start_link(id: id, command: "sh -c 'echo error >&2'")
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
       {:ok, logs} = Mission.get_logs(id)
       assert logs =~ "error"
