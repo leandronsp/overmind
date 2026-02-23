@@ -7,6 +7,7 @@ defmodule Overmind.CLI do
       ["start"] -> Overmind.Daemon.start()
       ["shutdown"] -> Overmind.Daemon.shutdown()
       ["__daemon__"] -> Overmind.Daemon.run_daemon()
+      ["claude", "run" | rest] -> cmd_claude_run(rest)
       ["run" | rest] -> cmd_run(rest)
       ["ps"] -> cmd_ps()
       ["logs", id] -> cmd_logs(id)
@@ -17,19 +18,31 @@ defmodule Overmind.CLI do
     end
   end
 
+  defp cmd_run([]) do
+    IO.puts("Missing command. Usage: overmind run <command>")
+  end
+
   defp cmd_run(args) do
-    {opts, _, _} = OptionParser.parse(args, strict: [agent: :string])
+    command = Enum.join(args, " ")
 
-    case Keyword.get(opts, :agent) do
-      nil ->
-        IO.puts("Missing --agent option")
+    case execute(Overmind, :run, [command]) do
+      {:ok, id} -> IO.puts("Started mission #{id}")
+      {:error, reason} -> IO.puts("Error: #{inspect(reason)}")
+      :daemon_error -> :ok
+    end
+  end
 
-      command ->
-        case execute(Overmind, :run, [command]) do
-          {:ok, id} -> IO.puts("Started mission #{id}")
-          {:error, reason} -> IO.puts("Error: #{inspect(reason)}")
-          :daemon_error -> :ok
-        end
+  defp cmd_claude_run([]) do
+    IO.puts("Missing prompt. Usage: overmind claude run <prompt>")
+  end
+
+  defp cmd_claude_run(args) do
+    prompt = Enum.join(args, " ")
+
+    case execute(Overmind, :run, [prompt, Overmind.Provider.Claude]) do
+      {:ok, id} -> IO.puts("Started mission #{id}")
+      {:error, reason} -> IO.puts("Error: #{inspect(reason)}")
+      :daemon_error -> :ok
     end
   end
 
@@ -114,13 +127,14 @@ defmodule Overmind.CLI do
     Usage: overmind <command> [options]
 
     Commands:
-      start               Start the daemon
-      shutdown            Stop the daemon
-      run --agent <cmd>   Spawn an agent process
-      ps                  List all missions
-      logs <id>           Show mission logs
-      stop <id>           Stop a mission (SIGTERM)
-      kill <id>           Kill a mission (SIGKILL)\
+      start                    Start the daemon
+      shutdown                 Stop the daemon
+      run <command>            Spawn a raw command
+      claude run <prompt>      Spawn a Claude agent
+      ps                       List all missions
+      logs <id>                Show mission logs
+      stop <id>                Stop a mission (SIGTERM)
+      kill <id>                Kill a mission (SIGKILL)\
     """)
   end
 

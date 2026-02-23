@@ -41,6 +41,19 @@ defmodule OvermindTest do
     end
   end
 
+  describe "run/2 with provider" do
+    test "provider stores original command in ETS" do
+      {:ok, id} = Overmind.run("echo hello", Overmind.Provider.TestClaude)
+      Process.sleep(100)
+
+      [{^id, _, "echo hello", _, _}] = :ets.lookup(:overmind_missions, id)
+    end
+
+    test "error for empty command with provider" do
+      assert {:error, :empty_command} = Overmind.run("", Overmind.Provider.Claude)
+    end
+  end
+
   describe "ps/0" do
     test "empty list when no missions" do
       assert Overmind.ps() == []
@@ -65,6 +78,15 @@ defmodule OvermindTest do
       missions = Overmind.ps()
       assert Enum.any?(missions, fn m -> m.id == id and m.status == :stopped end)
     end
+
+    test "does not include raw_events tuples" do
+      {:ok, id} = Overmind.run("echo test")
+      Process.sleep(200)
+
+      missions = Overmind.ps()
+      assert Enum.all?(missions, fn m -> is_binary(m.id) end)
+      assert Enum.any?(missions, fn m -> m.id == id end)
+    end
   end
 
   describe "logs/1" do
@@ -86,6 +108,20 @@ defmodule OvermindTest do
 
     test "error for unknown ID" do
       assert {:error, :not_found} = Overmind.logs("nonexist")
+    end
+  end
+
+  describe "raw_events/1" do
+    test "returns empty list for raw provider mission" do
+      {:ok, id} = Overmind.run("echo hello")
+      Process.sleep(200)
+
+      {:ok, events} = Overmind.raw_events(id)
+      assert events == []
+    end
+
+    test "error for unknown ID" do
+      assert {:error, :not_found} = Overmind.raw_events("nonexist")
     end
   end
 

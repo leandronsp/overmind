@@ -41,14 +41,24 @@ defmodule Overmind.CLITest do
     assert output =~ "Usage:"
   end
 
-  test "run command starts mission and prints ID" do
-    output = capture_io(fn -> Overmind.CLI.main(["run", "--agent", "sleep 60"]) end)
+  test "run command starts mission with positional arg" do
+    output = capture_io(fn -> Overmind.CLI.main(["run", "sleep", "60"]) end)
     assert output =~ "Started mission"
   end
 
-  test "run without --agent prints error" do
+  test "run without command prints error" do
     output = capture_io(fn -> Overmind.CLI.main(["run"]) end)
-    assert output =~ "Missing --agent"
+    assert output =~ "Missing command"
+  end
+
+  test "claude run without prompt prints error" do
+    output = capture_io(fn -> Overmind.CLI.main(["claude", "run"]) end)
+    assert output =~ "Missing prompt"
+  end
+
+  test "usage shows claude run" do
+    output = capture_io(fn -> Overmind.CLI.main([]) end)
+    assert output =~ "claude run"
   end
 
   test "ps command lists missions" do

@@ -56,6 +56,13 @@ defmodule Overmind.MissionTest do
       assert is_integer(started_at)
     end
 
+    test "stores original command in ETS, not wrapped" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "hello", provider: Overmind.Provider.Claude)
+
+      [{^id, _, "hello", :running, _}] = :ets.lookup(:overmind_missions, id)
+    end
+
     test "get_info/1 returns metadata with os_pid" do
       id = Mission.generate_id()
       {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60")
@@ -66,6 +73,41 @@ defmodule Overmind.MissionTest do
       assert info.status == :running
       assert is_integer(info.os_pid)
       assert info.os_pid > 0
+    end
+  end
+
+  describe "command chains" do
+    test "semicolon chain runs all commands" do
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "echo oi; sleep 1; echo tchau")
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 3000
+
+      {:ok, logs} = Mission.get_logs(id)
+      assert logs =~ "oi"
+      assert logs =~ "tchau"
+    end
+
+    test "&& chain runs all commands on success" do
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "echo first && sleep 1 && echo last")
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 3000
+
+      {:ok, logs} = Mission.get_logs(id)
+      assert logs =~ "first"
+      assert logs =~ "last"
+    end
+
+    test "&& chain stops on failure" do
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "echo before && false && echo after")
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
+
+      {:ok, logs} = Mission.get_logs(id)
+      assert logs =~ "before"
+      refute logs =~ "after"
     end
   end
 
@@ -98,6 +140,46 @@ defmodule Overmind.MissionTest do
     end
   end
 
+  describe "stream-json parsing" do
+    test "parses JSON lines and extracts text for logs" do
+      script = ~s(sh -c 'echo "{\\\"type\\\":\\\"assistant\\\",\\\"message\\\":{\\\"content\\\":[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"Canberra\\\"}]}}"')
+
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: script, provider: Overmind.Provider.TestClaude)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
+
+      {:ok, logs} = Mission.get_logs(id)
+      assert logs =~ "Canberra"
+    end
+
+    test "stores raw events from JSON lines" do
+      script = ~s(sh -c 'echo "{\\\"type\\\":\\\"result\\\",\\\"subtype\\\":\\\"success\\\",\\\"result\\\":\\\"Done\\\",\\\"duration_ms\\\":100,\\\"cost_usd\\\":0.01,\\\"is_error\\\":false}"')
+
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: script, provider: Overmind.Provider.TestClaude)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
+
+      {:ok, events} = Mission.get_raw_events(id)
+      assert length(events) == 1
+      assert hd(events)["type"] == "result"
+    end
+
+    test "plain text with Raw provider" do
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "echo plaintext")
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+
+      {:ok, logs} = Mission.get_logs(id)
+      assert logs =~ "plaintext"
+
+      {:ok, events} = Mission.get_raw_events(id)
+      assert events == []
+    end
+  end
+
   describe "exit detection" do
     test "exit 0 sets :stopped status in ETS" do
       id = Mission.generate_id()
@@ -125,6 +207,16 @@ defmodule Overmind.MissionTest do
 
       [{{:logs, ^id}, logs}] = :ets.lookup(:overmind_missions, {:logs, id})
       assert logs =~ "goodbye"
+    end
+
+    test "raw_events persisted to ETS after exit" do
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "echo done")
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+
+      [{{:raw_events, ^id}, events}] = :ets.lookup(:overmind_missions, {:raw_events, id})
+      assert is_list(events)
     end
   end
 end

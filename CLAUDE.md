@@ -12,23 +12,46 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 
 ```
 ├── lib/
-│   ├── overmind.ex              # Root module
+│   ├── overmind.ex              # Public API (run, ps, logs, stop, kill)
 │   └── overmind/
-│       ├── application.ex       # OTP Application
-│       └── cli.ex               # Escript entry point
+│       ├── application.ex       # OTP Application (ETS + DynamicSupervisor)
+│       ├── cli.ex               # Escript entry point, RPC to daemon
+│       ├── daemon.ex            # Daemon lifecycle (start/shutdown/rpc)
+│       ├── mission.ex           # GenServer per spawned process (Port)
+│       ├── provider.ex          # Provider behaviour (build_command, parse_line, format_for_logs)
+│       └── provider/
+│           ├── raw.ex           # Raw shell commands (wraps with sh -c)
+│           └── claude.ex        # Claude CLI (stream-json parsing)
 ├── test/
 │   ├── test_helper.exs
-│   └── overmind_test.exs
+│   ├── overmind_test.exs
+│   ├── overmind/
+│   │   ├── cli_test.exs
+│   │   ├── mission_test.exs
+│   │   └── provider/
+│   │       ├── raw_test.exs
+│   │       └── claude_test.exs
+│   └── support/                 # Test helpers (TestClaude provider)
+├── test_e2e.sh                  # E2E test script (daemon + raw + claude)
 ├── mix.exs
 └── CLAUDE.md
 ```
+
+## Architecture
+
+- **Daemon mode**: CLI sends commands via Erlang distributed RPC to a long-running daemon process
+- **Missions**: Each spawned command is a GenServer under DynamicSupervisor, managing a Port
+- **Providers**: Pluggable command builders/parsers — Raw wraps with `sh -c`, Claude parses stream-json
+- **ETS**: Mission state (status, logs, raw_events) persists after GenServer exits
 
 ## Build & Run
 
 ```bash
 mix build            # compile escript binary (alias for mix escript.build)
-./overmind           # run CLI
-mix test             # run tests (auto-rebuilds escript first)
+./overmind start     # start the daemon
+./overmind shutdown  # stop the daemon
+mix test             # run unit tests (auto-rebuilds escript first)
+mix e2e              # run E2E tests (builds, starts daemon, tests all commands)
 ```
 
 `mix test` always rebuilds the escript before running tests — no stale binary risk.
@@ -79,7 +102,7 @@ Typespecs serve as deterministic constraints on LLM-generated code — the type 
 
 ## Roadmap
 
-- **M0** — Spawn & Observe (current): `run`, `ps`, `logs`, `stop`, `kill`
+- **M0** — Spawn & Observe (done): `run`, `ps`, `logs`, `stop`, `kill`, daemon mode, providers (raw + claude)
 - **M1** — Human-in-the-Loop: `send`, `attach`
 - **M2** — Self-Healing: restart policies, backoff
 - **M3** — Declarative Config: Blueprint TOML
