@@ -2,6 +2,8 @@ defmodule Overmind.Mission do
   @moduledoc false
   use GenServer
 
+  alias Overmind.Mission.Store
+
   defstruct [
     :id,
     :command,
@@ -53,116 +55,87 @@ defmodule Overmind.Mission do
 
   @spec get_logs(String.t()) :: {:ok, String.t()} | {:error, :not_found}
   def get_logs(id) do
-    case :ets.lookup(:overmind_missions, id) do
-      [{^id, pid, _, :running, _}] ->
-        try do
-          {:ok, GenServer.call(pid, :get_logs)}
-        catch
-          :exit, _ -> {:error, :not_found}
-        end
-
-      [{^id, _, _, _status, _}] ->
-        case :ets.lookup(:overmind_missions, {:logs, id}) do
-          [{{:logs, ^id}, logs}] -> {:ok, logs}
-          [] -> {:ok, ""}
-        end
-
-      [] ->
-        {:error, :not_found}
+    case Store.lookup(id) do
+      {:running, pid, _, _} -> fetch_from_process(pid, :get_logs, "")
+      {:exited, _, _, _} -> {:ok, Store.stored_logs(id)}
+      :not_found -> {:error, :not_found}
     end
   end
 
   @spec get_raw_events(String.t()) :: {:ok, [map()]} | {:error, :not_found}
   def get_raw_events(id) do
-    case :ets.lookup(:overmind_missions, id) do
-      [{^id, pid, _, :running, _}] ->
-        try do
-          {:ok, GenServer.call(pid, :get_raw_events)}
-        catch
-          :exit, _ -> {:error, :not_found}
-        end
-
-      [{^id, _, _, _status, _}] ->
-        case :ets.lookup(:overmind_missions, {:raw_events, id}) do
-          [{{:raw_events, ^id}, events}] -> {:ok, events}
-          [] -> {:ok, []}
-        end
-
-      [] ->
-        {:error, :not_found}
+    case Store.lookup(id) do
+      {:running, pid, _, _} -> fetch_from_process(pid, :get_raw_events, [])
+      {:exited, _, _, _} -> {:ok, Store.stored_raw_events(id)}
+      :not_found -> {:error, :not_found}
     end
   end
 
   @spec stop(String.t()) :: :ok | {:error, :not_found | :not_running}
   def stop(id) do
-    case :ets.lookup(:overmind_missions, id) do
-      [{^id, pid, _, :running, _}] ->
-        try do
-          GenServer.call(pid, {:stop, :sigterm})
-        catch
-          :exit, _ -> {:error, :not_running}
-        end
-
-      [{^id, _, _, _, _}] ->
-        {:error, :not_running}
-
-      [] ->
-        {:error, :not_found}
+    case Store.lookup(id) do
+      {:running, pid, _, _} -> signal_process(pid, {:stop, :sigterm}, :not_running)
+      {:exited, _, _, _} -> {:error, :not_running}
+      :not_found -> {:error, :not_found}
     end
   end
 
   @spec kill(String.t()) :: :ok | {:error, :not_found}
   def kill(id) do
-    case :ets.lookup(:overmind_missions, id) do
-      [{^id, pid, _, :running, _}] ->
-        try do
-          GenServer.call(pid, {:kill, :sigkill})
-        catch
-          :exit, _ ->
-            cleanup(id)
-            :ok
-        end
-
-      [{^id, _, _, _, _}] ->
-        cleanup(id)
-        :ok
-
-      [] ->
-        {:error, :not_found}
+    case Store.lookup(id) do
+      {:running, pid, _, _} -> kill_running(pid, id)
+      {:exited, _, _, _} -> Store.cleanup(id)
+      :not_found -> {:error, :not_found}
     end
-  end
-
-  defp cleanup(id) do
-    :ets.delete(:overmind_missions, id)
-    :ets.delete(:overmind_missions, {:logs, id})
-    :ets.delete(:overmind_missions, {:raw_events, id})
   end
 
   @spec get_info(String.t()) :: {:ok, map()} | {:error, :not_found}
   def get_info(id) do
-    case :ets.lookup(:overmind_missions, id) do
-      [{^id, pid, command, status, started_at}] when status == :running ->
-        os_pid = GenServer.call(pid, :get_os_pid)
-        {:ok, %{id: id, command: command, status: status, started_at: started_at, os_pid: os_pid}}
+    case Store.lookup(id) do
+      {:running, pid, command, started_at} ->
+        {:ok, os_pid} = Store.safe_call(pid, :get_os_pid)
+        {:ok, %{id: id, command: command, status: :running, started_at: started_at, os_pid: os_pid}}
 
-      [{^id, _pid, command, status, started_at}] ->
+      {:exited, status, command, started_at} ->
         {:ok, %{id: id, command: command, status: status, started_at: started_at, os_pid: nil}}
 
-      [] ->
+      :not_found ->
         {:error, :not_found}
     end
   end
 
+  # Private helpers for client API
+
+  defp fetch_from_process(pid, message, fallback) do
+    case Store.safe_call(pid, message) do
+      {:ok, value} -> {:ok, value}
+      :dead -> {:ok, fallback}
+    end
+  end
+
+  defp signal_process(pid, message, error_on_dead) do
+    case Store.safe_call(pid, message) do
+      {:ok, result} -> result
+      :dead -> {:error, error_on_dead}
+    end
+  end
+
+  defp kill_running(pid, id) do
+    case Store.safe_call(pid, {:kill, :sigkill}) do
+      {:ok, result} -> result
+      :dead -> Store.cleanup(id)
+    end
+  end
+
+  # GenServer callbacks
+
   @impl true
   def init(%{id: id, command: command, provider: provider}) do
     port_command = provider.build_command(command) <> " < /dev/null"
-
-    port =
-      Port.open({:spawn, port_command}, [:binary, :exit_status, :stderr_to_stdout])
-
+    port = Port.open({:spawn, port_command}, [:binary, :exit_status, :stderr_to_stdout])
     {:os_pid, os_pid} = Port.info(port, :os_pid)
     now = System.system_time(:second)
-    :ets.insert(:overmind_missions, {id, self(), command, :running, now})
+    Store.insert(id, {self(), command, :running, now})
 
     {:ok,
      %__MODULE__{
@@ -199,9 +172,7 @@ defmodule Overmind.Mission do
   @impl true
   def handle_call({:kill, :sigkill}, _from, state) do
     System.cmd("kill", ["-9", Integer.to_string(state.os_pid)])
-    :ets.delete(:overmind_missions, state.id)
-    :ets.delete(:overmind_missions, {:logs, state.id})
-    :ets.delete(:overmind_missions, {:raw_events, state.id})
+    Store.cleanup(state.id)
     {:stop, :normal, :ok, %{state | port: nil}}
   end
 
@@ -213,8 +184,7 @@ defmodule Overmind.Mission do
       Enum.reduce(lines, {"", []}, fn line, {logs_acc, events_acc} ->
         {event, raw} = state.provider.parse_line(line)
         formatted = state.provider.format_for_logs(event)
-        events_acc = if raw, do: events_acc ++ [raw], else: events_acc
-        {logs_acc <> formatted, events_acc}
+        {logs_acc <> formatted, maybe_append(events_acc, raw)}
       end)
 
     {:noreply,
@@ -228,16 +198,7 @@ defmodule Overmind.Mission do
 
   @impl true
   def handle_info({port, {:exit_status, code}}, %{port: port} = state) do
-    # Flush remaining line_buffer
-    {logs_append, final_raw_events} =
-      if state.line_buffer != "" do
-        {event, raw} = state.provider.parse_line(state.line_buffer)
-        formatted = state.provider.format_for_logs(event)
-        events = if raw, do: [raw], else: []
-        {formatted, events}
-      else
-        {"", []}
-      end
+    {logs_append, final_raw_events} = flush_line_buffer(state.line_buffer, state.provider)
 
     state = %{
       state
@@ -246,28 +207,38 @@ defmodule Overmind.Mission do
         line_buffer: ""
     }
 
-    status =
-      cond do
-        state.stopping -> :stopped
-        code == 0 -> :stopped
-        true -> :crashed
-      end
-
-    :ets.insert(:overmind_missions, {state.id, self(), state.command, status, state.started_at})
+    status = exit_status(state.stopping, code)
+    Store.insert(state.id, {self(), state.command, status, state.started_at})
     {:stop, :normal, %{state | port: nil}}
   end
 
   @impl true
   def terminate(_reason, state) do
-    case :ets.lookup(:overmind_missions, state.id) do
-      [{_, _, _, status, _}] when status in [:stopped, :crashed] ->
-        :ets.insert(:overmind_missions, {{:logs, state.id}, state.logs})
-        :ets.insert(:overmind_missions, {{:raw_events, state.id}, state.raw_events})
-
-      _ ->
-        :ok
+    case Store.lookup(state.id) do
+      {:exited, _, _, _} -> Store.persist_after_exit(state.id, state.logs, state.raw_events)
+      _ -> :ok
     end
   end
+
+  # Private helpers
+
+  defp flush_line_buffer("", _provider), do: {"", []}
+
+  defp flush_line_buffer(buffer, provider) do
+    {event, raw} = provider.parse_line(buffer)
+    formatted = provider.format_for_logs(event)
+    {formatted, maybe_wrap(raw)}
+  end
+
+  defp maybe_append(list, nil), do: list
+  defp maybe_append(list, event), do: list ++ [event]
+
+  defp maybe_wrap(nil), do: []
+  defp maybe_wrap(event), do: [event]
+
+  defp exit_status(_stopping = true, _code), do: :stopped
+  defp exit_status(_stopping, 0), do: :stopped
+  defp exit_status(_stopping, _code), do: :crashed
 
   defp split_lines(data) do
     case String.split(data, "\n", parts: :infinity) do

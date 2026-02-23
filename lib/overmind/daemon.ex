@@ -6,30 +6,7 @@ defmodule Overmind.Daemon do
 
   @spec start() :: :ok
   def start do
-    if alive?() do
-      IO.puts("Daemon is already running")
-    else
-      File.mkdir_p!(pid_dir())
-      ensure_epmd()
-
-      escript = escript_path()
-
-      {output, _} =
-        System.cmd("sh", [
-          "-c",
-          "nohup #{escript} __daemon__ > #{log_file()} 2>&1 & echo $!"
-        ])
-
-      os_pid = String.trim(output)
-      File.write!(pid_file(), os_pid)
-
-      case wait_for_daemon(20) do
-        :ok -> IO.puts("Daemon started (PID #{os_pid})")
-        :timeout -> IO.puts("Daemon process started but not yet reachable")
-      end
-    end
-
-    :ok
+    start_daemon(alive?())
   end
 
   @spec run_daemon() :: no_return()
@@ -87,16 +64,48 @@ defmodule Overmind.Daemon do
     end
   end
 
+  defp start_daemon(_already_running = true) do
+    IO.puts("Daemon is already running")
+    :ok
+  end
+
+  defp start_daemon(_not_running = false) do
+    File.mkdir_p!(pid_dir())
+    ensure_epmd()
+
+    escript = escript_path()
+
+    {output, _} =
+      System.cmd("sh", [
+        "-c",
+        "nohup #{escript} __daemon__ > #{log_file()} 2>&1 & echo $!"
+      ])
+
+    os_pid = String.trim(output)
+    File.write!(pid_file(), os_pid)
+
+    case wait_for_daemon(20) do
+      :ok -> IO.puts("Daemon started (PID #{os_pid})")
+      :timeout -> IO.puts("Daemon process started but not yet reachable")
+    end
+
+    :ok
+  end
+
   defp ensure_epmd do
     System.cmd("epmd", ["-daemon"], stderr_to_stdout: true)
   end
 
   defp ensure_distributed do
-    unless Node.alive?() do
-      name = :"overmind_cli_#{:rand.uniform(1_000_000)}"
-      Node.start(name, name_domain: :shortnames)
-      Node.set_cookie(@cookie)
-    end
+    maybe_start_distribution(Node.alive?())
+  end
+
+  defp maybe_start_distribution(_already_distributed = true), do: :ok
+
+  defp maybe_start_distribution(_needs_distribution = false) do
+    name = :"overmind_cli_#{:rand.uniform(1_000_000)}"
+    Node.start(name, name_domain: :shortnames)
+    Node.set_cookie(@cookie)
   end
 
   defp daemon_node do

@@ -18,6 +18,8 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │       ├── cli.ex               # Escript entry point, RPC to daemon
 │       ├── daemon.ex            # Daemon lifecycle (start/shutdown/rpc)
 │       ├── mission.ex           # GenServer per spawned process (Port)
+│       ├── mission/
+│       │   └── store.ex         # ETS operations for mission state
 │       ├── provider.ex          # Provider behaviour (build_command, parse_line, format_for_logs)
 │       └── provider/
 │           ├── raw.ex           # Raw shell commands (wraps with sh -c)
@@ -28,10 +30,12 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │   ├── overmind/
 │   │   ├── cli_test.exs
 │   │   ├── mission_test.exs
+│   │   ├── mission/
+│   │   │   └── store_test.exs
 │   │   └── provider/
 │   │       ├── raw_test.exs
 │   │       └── claude_test.exs
-│   └── support/                 # Test helpers (TestClaude provider)
+│   └── support/                 # Test helpers (TestClaude provider, MissionHelper)
 ├── test_e2e.sh                  # E2E test script (daemon + raw + claude)
 ├── mix.exs
 └── CLAUDE.md
@@ -93,6 +97,38 @@ Typespecs serve as deterministic constraints on LLM-generated code — the type 
 | `[type()]` | `list(type())` | Lists |
 | `{:ok, t()} \| {:error, term()}` | | Tagged tuples (ok/error) |
 | `MyModule.t()` | | Custom struct types |
+
+## Elixir Style
+
+### Control Flow
+- Prefer multi-clause functions with pattern matching over `if/else`, `unless`, `cond`
+- Use `case` only when matching on an already-computed value (ETS result, GenServer reply)
+- Use guard clauses (`when`) for type/range checks on function arguments
+- Name multi-clause dispatch helpers descriptively, use underscored params for boolean semantics:
+  `defp start_daemon(_already_running = true)`
+- Extract repeated inline `if` into small helpers: `maybe_append/2`, `flush_line_buffer/2`
+
+### Anti-patterns — DO NOT
+- `if/else` for boolean dispatch — use multi-clause functions instead
+- `unless` — use multi-clause with negated match or guard
+- Deeply nested `case` inside `case` — extract inner match to a helper function
+- `cond` when matching a single value — use `case` or function heads
+- `do_something(true/false)` naming — use descriptive names
+- Inline `if x, do: a, else: b` for nil checks — use `maybe_x(nil)` / `maybe_x(val)` pattern
+- God modules (>200 lines) — extract submodules (e.g., Mission.Store)
+- Duplicated code across files — extract to shared helper in `test/support/` or `lib/`
+
+## TDD
+
+- Write tests BEFORE or alongside implementation, never after
+- Run `mix test` after every meaningful change, not just at the end
+- Test public API only — do not test private functions directly
+- One assertion focus per test (multiple asserts OK if testing one logical thing)
+- Use `describe` blocks to group by function/feature
+- Use `setup` for shared state, extract to `test/support/` if used across files
+- Prefer `assert_receive` with monitors over `Process.sleep` for async assertions
+- Run `mix dialyzer` before committing — typespecs are tests too
+- E2E tests (`mix e2e`) validate the full daemon + CLI integration
 
 ## Git
 

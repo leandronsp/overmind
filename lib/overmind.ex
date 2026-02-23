@@ -2,6 +2,7 @@ defmodule Overmind do
   @moduledoc false
 
   alias Overmind.Mission
+  alias Overmind.Mission.Store
 
   @spec run(String.t(), module()) :: {:ok, String.t()} | {:error, term()}
   def run(command, provider \\ Overmind.Provider.Raw)
@@ -22,12 +23,7 @@ defmodule Overmind do
   def ps do
     now = System.system_time(:second)
 
-    :ets.tab2list(:overmind_missions)
-    |> Enum.filter(fn
-      {{:logs, _}, _} -> false
-      {{:raw_events, _}, _} -> false
-      {_id, _pid, _cmd, _status, _started} -> true
-    end)
+    Store.list_all()
     |> Enum.map(fn {id, _pid, command, status, started_at} ->
       %{id: id, command: command, status: status, uptime: now - started_at}
     end)

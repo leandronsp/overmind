@@ -96,23 +96,27 @@ defmodule Overmind.CLI do
   end
 
   defp execute(mod, fun, args) do
-    if direct_mode?() do
-      apply(mod, fun, args)
-    else
-      with :ok <- Overmind.Daemon.connect() do
-        case Overmind.Daemon.rpc(mod, fun, args) do
-          {:error, {:rpc_failed, reason}} ->
-            IO.puts("RPC error: #{inspect(reason)}")
-            :daemon_error
+    dispatch_execute(direct_mode?(), mod, fun, args)
+  end
 
-          result ->
-            result
-        end
-      else
-        {:error, :not_running} ->
-          IO.puts("Daemon not running. Start with: overmind start")
+  defp dispatch_execute(_direct = true, mod, fun, args) do
+    apply(mod, fun, args)
+  end
+
+  defp dispatch_execute(_via_daemon = false, mod, fun, args) do
+    with :ok <- Overmind.Daemon.connect() do
+      case Overmind.Daemon.rpc(mod, fun, args) do
+        {:error, {:rpc_failed, reason}} ->
+          IO.puts("RPC error: #{inspect(reason)}")
           :daemon_error
+
+        result ->
+          result
       end
+    else
+      {:error, :not_running} ->
+        IO.puts("Daemon not running. Start with: overmind start")
+        :daemon_error
     end
   end
 

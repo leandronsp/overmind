@@ -36,12 +36,7 @@ defmodule Overmind.Provider.Claude do
 
   defp parse_event(%{"type" => "user", "message" => %{"content" => content}} = raw) do
     block = Enum.find(content, &(&1["type"] == "tool_result"))
-
-    if block do
-      {{:tool_result, Map.delete(block, "type")}, raw}
-    else
-      {{:ignored, raw}, raw}
-    end
+    parse_user_content(block, raw)
   end
 
   defp parse_event(%{"type" => "result", "is_error" => true} = raw) do
@@ -67,6 +62,9 @@ defmodule Overmind.Provider.Claude do
   defp parse_event(raw) do
     {{:ignored, raw}, raw}
   end
+
+  defp parse_user_content(nil, raw), do: {{:ignored, raw}, raw}
+  defp parse_user_content(block, raw), do: {{:tool_result, Map.delete(block, "type")}, raw}
 
   defp pick_content_block(content, raw) do
     text_block = Enum.find(content, &(&1["type"] == "text"))
