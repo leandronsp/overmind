@@ -139,8 +139,9 @@ Typespecs serve as deterministic constraints on LLM-generated code — the type 
 ## Roadmap
 
 - **M0** — Spawn & Observe (done): `run`, `ps`, `logs`, `stop`, `kill`, daemon mode, providers (raw + claude)
-- **M1** — Human-in-the-Loop: `send`, `attach`
-- **M2** — Self-Healing: restart policies, backoff
+- **M1** — Session Agents: `--type session`, long-running multi-turn agents, `send`, `attach` (hybrid PTY), bidirectional stream-json
+- **M2** — Self-Healing: restart policies, exponential backoff, stall detection, session recovery via `--session-id`
+- **M2.5** — Agent Orchestration: orchestrator pattern, optional hierarchy (`--parent`), `ps --tree`, `kill --cascade`
 - **M3** — Declarative Config: Blueprint TOML
 - **M4** — Full Isolation: worktree + port allocation + Docker
 - **M5** — Shared Akasha: distributed memory

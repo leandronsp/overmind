@@ -37,8 +37,9 @@ mix e2e            # full E2E tests (daemon, raw commands, claude)
 | Milestone | Name | Description |
 |-----------|------|-------------|
 | **M0** | **Spawn & Observe** | **`run`, `ps`, `logs`, `stop`, `kill`, daemon, providers** |
-| M1 | Human-in-the-Loop | `send`, `attach` |
-| M2 | Self-Healing | Restart policies, exponential backoff |
+| M1 | Session Agents | `--type session`, long-running multi-turn agents, `send`, `attach` (hybrid PTY) |
+| M2 | Self-Healing | Restart policies, exponential backoff, stall detection |
+| M2.5 | Agent Orchestration | Orchestrator pattern, optional hierarchy (`--parent`), `kill --cascade` |
 | M3 | Declarative Config | Blueprint TOML, `overmind apply` |
 | M4 | Full Isolation | Worktree + port allocation + Docker services |
 | M5 | Shared Akasha | Distributed codebase memory |
