@@ -123,6 +123,7 @@ Closes #<issue_number>
 
 - [ ] `mix test` passes
 - [ ] `mix dialyzer` passes
+- [ ] `mix smoke` passes
 ```
 
 Omit the `Closes #...` line if there is no source issue.

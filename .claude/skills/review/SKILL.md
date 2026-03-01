@@ -13,7 +13,7 @@ description: Deep code review - Elixir idioms, OTP patterns, tech debt, safety. 
 2. **Review** using the priorities below (includes tech debt audit)
 3. **Enter plan mode** with a fix plan if there are Critical or Important findings
 4. **Implement fixes** after user approves the plan
-5. **Re-run `mix test` and `mix dialyzer`** to confirm everything is clean
+5. **Re-run `mix test`, `mix dialyzer`, and `mix smoke`** to confirm everything is clean
 
 If the review finds nothing actionable, skip the plan and report the verdict.
 
@@ -25,6 +25,8 @@ If the review finds nothing actionable, skip the plan and report the verdict.
 - Are removed/renamed modules cleaned from the structure section?
 - Do new public functions have `@spec`?
 - Do new structs have `@type t :: %__MODULE__{}`?
+- Non-obvious logic has explanatory comments (WHY, not WHAT)
+- Shell scripts have section headers and gotcha comments
 
 ### 1. Correctness
 - Does the logic work? (state machines, ETS operations, process lifecycle)
@@ -86,7 +88,8 @@ def handle_info({port, {:data, data}}, %{port: port} = state) do
 
 #### Code Smells
 
-- Over-commenting self-documenting code
+- Commenting obvious code (self-documenting names need no narration)
+- Missing comments on non-obvious logic, gotchas, or protocol details
 - Single-use wrapper functions (unnecessary abstraction)
 - Defensive guards on internal code
 - Breaking established codebase patterns
@@ -243,6 +246,7 @@ A) **Issue**: description
 
 ### Tests
 - [ ] `mix test` passes
+- [ ] `mix smoke` passes
 - [ ] No testing of private functions
 - [ ] `describe` blocks for grouping
 - [ ] Shared setup in `test/support/`

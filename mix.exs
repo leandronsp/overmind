@@ -28,7 +28,8 @@ defmodule Overmind.MixProject do
     [
       build: ["escript.build"],
       test: ["escript.build", "test"],
-      e2e: ["cmd ./test_e2e.sh"]
+      e2e: ["cmd ./test_e2e.sh"],
+      smoke: ["cmd ./test_smoke.sh"]
     ]
   end
 

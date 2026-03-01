@@ -53,6 +53,13 @@ Type reference:
 - Domain-driven naming: types over primitives
 - Modules <200 lines — extract submodules when growing
 
+## Comments
+
+- Comment non-obvious logic, gotchas, and protocol details
+- Don't comment self-documenting functions (obvious names, simple patterns)
+- Explain WHY, not WHAT — the code shows what, comments explain intent
+- Section headers (`# Port management`, `# Restart logic`) help navigate large files
+
 ## Architecture
 
 - Thin CLI, domain logic in dedicated modules
@@ -71,5 +78,5 @@ Type reference:
 - God modules >200 lines
 - Raw `:ets` calls outside Store
 - `Process.sleep` in tests
-- Over-commenting self-documenting code
+- Commenting obvious code (self-documenting names need no narration)
 - Defensive guards on internal code

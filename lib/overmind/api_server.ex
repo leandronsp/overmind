@@ -85,6 +85,8 @@ defmodule Overmind.APIServer do
     end
   end
 
+  # CWD is fetched separately because the CLI needs it to `cd` before
+  # running `claude --resume` (session state lives in the mission's CWD).
   def dispatch(%{"cmd" => "pause"} = req) do
     id = get_in(req, ["args", "id"])
     resolved = Overmind.Mission.Store.resolve_id(id)
@@ -108,6 +110,8 @@ defmodule Overmind.APIServer do
     end
   end
 
+  # Async shutdown: spawn with delay so the JSON response reaches the client
+  # before :init.stop() tears down the VM and closes the socket.
   def dispatch(%{"cmd" => "shutdown"}) do
     spawn(fn ->
       Process.sleep(100)
@@ -127,6 +131,9 @@ defmodule Overmind.APIServer do
 
   # GenServer callbacks
 
+  # Unix domain socket via :gen_tcp with {:ifaddr, {:local, path}}.
+  # Port 0 is required by :gen_tcp but ignored for Unix sockets.
+  # Protocol: newline-delimited JSON (one request, one response per connection).
   @impl true
   def init(opts) do
     path = Keyword.get(opts, :socket_path, @default_socket_path)
@@ -166,6 +173,8 @@ defmodule Overmind.APIServer do
     end
   end
 
+  # One request per connection: read JSON line, dispatch, respond, close.
+  # 5s timeout guards against hung clients holding the socket.
   defp handle_client(client) do
     case :gen_tcp.recv(client, 0, 5000) do
       {:ok, line} ->

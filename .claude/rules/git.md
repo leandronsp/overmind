@@ -35,6 +35,7 @@ Rules:
 ```bash
 mix test      # all tests pass
 mix dialyzer  # no type warnings
+mix smoke     # daemon lifecycle check
 ```
 
 ## Examples

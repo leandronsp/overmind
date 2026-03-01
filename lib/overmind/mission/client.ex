@@ -1,5 +1,8 @@
 defmodule Overmind.Mission.Client do
   @moduledoc false
+  # Client API for interacting with missions. Routes to the live GenServer
+  # process for running/restarting missions, or reads from ETS for exited ones.
+  # All functions accept either a mission id or agent name (resolved via Store).
 
   alias Overmind.Mission.Store
 
@@ -145,6 +148,8 @@ defmodule Overmind.Mission.Client do
     end
   end
 
+  # Paused = human attached via CLI (attach command). Reject programmatic
+  # sends while a human is interacting to avoid conflicting input.
   defp checked_send(id, pid, message) do
     case Store.lookup_attached(id) do
       true -> {:error, :paused}

@@ -1,9 +1,18 @@
 #!/bin/sh
-# Overmind CLI helpers — sourced by bin/overmind
+# Overmind CLI helpers — JSON encoding, socket transport, response parsing.
+# Sourced by bin/overmind. All functions here are used by commands.sh.
+
+# --- JSON encoding ---
 
 escape_json() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
+
+unescape_json() {
+  printf '%b' "$1"
+}
+
+# --- Socket transport ---
 
 send_cmd() {
   if [ ! -S "$SOCK" ]; then
@@ -17,6 +26,11 @@ send_cmd() {
   printf '%s' "$response"
 }
 
+# --- Response parsing ---
+
+# Parse {"ok":...} or {"error":"..."} responses from the daemon.
+# First sed strips the outer {"ok":...} wrapper, second strips surrounding quotes
+# so callers get the raw value (e.g. an id string or escaped text).
 extract_ok() {
   response="$1"
   if printf '%s' "$response" | grep -q '"error"'; then
@@ -27,10 +41,11 @@ extract_ok() {
   printf '%s' "$response" | sed 's/.*"ok":\(.*\)}/\1/' | sed 's/^"//; s/"$//'
 }
 
-unescape_json() {
-  printf '%b' "$1"
-}
+# --- Optional JSON field builders ---
 
+# Append a JSON key-value pair only when val is non-empty.
+# Uses if/then instead of [ -n ] && printf because set -e treats
+# the short-circuit false exit as a script failure.
 maybe_json_str() {
   key="$1"
   val="$2"
@@ -47,7 +62,10 @@ maybe_json_int() {
   fi
 }
 
-# Send a simple id-based command and print a confirmation message
+# --- Command helpers ---
+
+# Shared pattern for stop/kill/detach — commands that take only an id,
+# send it to the daemon, and print a verb + mission id on success.
 simple_id_cmd() {
   cmd_name="$1"; id="$2"; verb="$3"
   escaped=$(escape_json "$id")

@@ -94,7 +94,8 @@ Run: `mix test`
 Write only enough production code to make the failing test pass. No more. No future-proofing.
 
 Follow all codebase conventions from `CLAUDE.md`:
-- Self-documenting function names, minimal comments
+- Self-documenting function names
+- Add comments on non-obvious logic during implementation, not as afterthought
 - Idiomatic Elixir — pattern matching, pipelines, supervision trees
 - No external deps unless strictly necessary
 - Typespecs: `@spec` on public client API, `@type t` on structs, skip GenServer callbacks. Consult `CLAUDE.md` Type Reference table for correct types (e.g. `String.t()` not `string()`, `GenServer.on_start()` for start_link returns, `port()` for Port refs)
@@ -139,6 +140,7 @@ For each task:
 - [ ] Repeat for next behavior increment
 - [ ] All task behaviors covered
 - [ ] `mix dialyzer` passes (type constraint check)
+- [ ] `mix smoke` passes (daemon lifecycle check)
 - [ ] Commit with `/commit`
 
 ## Pipeline

@@ -1,7 +1,11 @@
 #!/bin/sh
-# Overmind CLI commands — sourced by bin/overmind
+# Overmind CLI commands — user-facing cmd_* functions dispatched by bin/overmind.
+# Each function builds JSON, sends it over the Unix socket, and formats output.
+
+# --- Daemon lifecycle ---
 
 cmd_start() {
+  # If socket exists, check if daemon is actually alive (stale socket from crash)
   if [ -S "$SOCK" ]; then
     if printf '{"cmd":"ping"}\n' | nc -U "$SOCK" >/dev/null 2>&1; then
       echo "Daemon is already running"
@@ -15,6 +19,7 @@ cmd_start() {
   daemon_pid=$!
   echo "$daemon_pid" > "$PIDFILE"
 
+  # Poll for socket: 20 × 0.25s = 5s max wait for daemon to create the socket
   i=0
   while [ $i -lt 20 ]; do
     if [ -S "$SOCK" ]; then
@@ -28,7 +33,9 @@ cmd_start() {
 }
 
 cmd_shutdown() {
+  # Daemon removes socket asynchronously after receiving shutdown command
   response=$(send_cmd '{"cmd":"shutdown"}') || return 0
+  # Poll for socket removal: 20 × 0.1s = 2s max wait
   i=0
   while [ $i -lt 20 ]; do
     [ ! -S "$SOCK" ] && break
@@ -65,6 +72,7 @@ cmd_run() {
       *)                  command="$command $1"; shift ;;
     esac
   done
+  # Non-flag args accumulate with leading space; strip it
   command=$(printf '%s' "$command" | sed 's/^ //')
 
   if [ -z "$command" ] && [ "$type" = "task" ]; then
@@ -73,6 +81,7 @@ cmd_run() {
   fi
 
   escaped=$(escape_json "$command")
+  # Build optional JSON fields — each maybe_json_* returns empty string if val is empty
   extra=""
   extra="$extra$(maybe_json_str "cwd" "$cwd")"
   extra="$extra$(maybe_json_str "name" "$name")"
@@ -141,27 +150,29 @@ cmd_attach() {
   escaped=$(escape_json "$id")
   response=$(send_cmd "{\"cmd\":\"pause\",\"args\":{\"id\":\"$escaped\"}}") || return 1
 
-  # Check for error BEFORE parsing fields
+  # Error check before field parsing — pause response has nested JSON
+  # that extract_ok can't handle, so we parse manually with sed
   if printf '%s' "$response" | grep -q '"error"'; then
     err=$(printf '%s' "$response" | sed 's/.*"error":"\([^"]*\)".*/\1/')
     echo "Error: $err" >&2
     return 1
   fi
 
-  # Response is {"ok":{"session_id":"...","cwd":"..."}}
+  # Response: {"ok":{"session_id":"...","cwd":"..."}}
   session_id=$(printf '%s' "$response" | sed 's/.*"session_id":"\([^"]*\)".*/\1/')
   cwd=$(printf '%s' "$response" | sed 's/.*"cwd":"\([^"]*\)".*/\1/')
 
+  # No session yet (first prompt hasn't been sent) — unpause and bail
   if [ "$session_id" = "null" ] || [ -z "$session_id" ]; then
     printf '{\"cmd\":\"unpause\",\"args\":{\"id\":\"%s\"}}\n' "$escaped" | nc -U "$SOCK" > /dev/null 2>&1
     echo "Mission $id has no session ID yet"
     return 1
   fi
 
-  # unpause on exit (Ctrl+C, error, Claude exits)
+  # Unpause on ALL exit paths: Ctrl+C, Claude crash, normal exit
   trap "printf '{\"cmd\":\"unpause\",\"args\":{\"id\":\"$escaped\"}}\\n' | nc -U \"$SOCK\" > /dev/null 2>&1" EXIT
 
-  # cd to mission's working directory if set
+  # Claude session must run in the mission's CWD for --resume to find its state
   if [ -n "$cwd" ] && [ "$cwd" != "null" ]; then
     cd "$cwd" || true
   fi

@@ -106,6 +106,8 @@ defmodule Overmind.Mission do
 
   # GenServer callbacks
 
+  # Port is opened eagerly in init — the mission is visible in ETS (via ps)
+  # immediately, before start_link returns to the caller.
   @impl true
   def init(%{id: id, command: command, provider: provider, type: type, cwd: cwd, name: name} = args) do
     restart_policy = Map.get(args, :restart_policy, :never)
@@ -211,6 +213,10 @@ defmodule Overmind.Mission do
     {:noreply, %{state | logs: state.logs <> "[human] #{message}\n"}}
   end
 
+  # Port data arrives as arbitrary byte chunks — we buffer partial lines and
+  # only process complete newline-terminated lines through the provider.
+  # Each line is parsed into a structured event, formatted for human-readable
+  # logs, and optionally stored as a raw JSON event (for claude provider).
   @impl true
   def handle_info({port, {:data, data}}, %{port: port} = state) do
     {lines, remainder} = split_lines(state.line_buffer <> data)
@@ -238,6 +244,8 @@ defmodule Overmind.Mission do
      }}
   end
 
+  # Port exit: flush remaining buffer, decide whether to restart or terminate.
+  # Restart decision follows the policy chain: stopping? → policy → budget check.
   @impl true
   def handle_info({port, {:exit_status, code}}, %{port: port} = state) do
     {logs_append, final_raw_events} = flush_line_buffer(state.line_buffer, state.provider)
@@ -267,6 +275,9 @@ defmodule Overmind.Mission do
     end
   end
 
+  # Stall detection: periodic timer fires to check if the process has produced
+  # output recently. SIGKILL bypasses graceful shutdown — the port exit_status
+  # handler then decides whether to restart based on the restart policy.
   @impl true
   def handle_info(:check_activity, %{port: nil} = state) do
     {:noreply, state}
@@ -289,6 +300,9 @@ defmodule Overmind.Mission do
     end
   end
 
+  # Re-open the Port with the same command. For sessions, passes session_id
+  # so claude --resume picks up where it left off. Logs/raw_events accumulate
+  # across restarts (never reset). Attached/paused state is cleared.
   @impl true
   def handle_info(:restart, state) do
     count = state.restart_count + 1
@@ -330,8 +344,9 @@ defmodule Overmind.Mission do
     Store.persist_after_exit(state.id, state.logs, state.raw_events)
   end
 
-  # Private helpers
+  # --- Private helpers ---
 
+  # Flush any remaining partial line when the port exits
   defp flush_line_buffer("", _provider), do: {"", []}
 
   defp flush_line_buffer(buffer, provider) do
@@ -381,6 +396,8 @@ defmodule Overmind.Mission do
     provider.build_command(command) <> " < /dev/null"
   end
 
+  # Restart policy dispatch: manual stop always wins, then policy, then budget.
+  # :on_failure only restarts on non-zero exit; :always restarts unconditionally.
   defp should_restart?(%{stopping: true}, _status), do: false
   defp should_restart?(%{restart_policy: :never}, _status), do: false
   defp should_restart?(%{restart_policy: :on_failure}, :stopped), do: false
@@ -389,6 +406,8 @@ defmodule Overmind.Mission do
        when policy in [:on_failure, :always],
        do: within_restart_budget?(state)
 
+  # Sliding window budget: count restarts within the last max_seconds.
+  # max_restarts=0 means unlimited restarts.
   defp within_restart_budget?(%{max_restarts: 0}), do: true
 
   defp within_restart_budget?(%{max_restarts: max, max_seconds: window, restart_timestamps: timestamps}) do
@@ -398,6 +417,7 @@ defmodule Overmind.Mission do
     recent < max
   end
 
+  # Exponential backoff: base × 2^count, capped at 60s
   defp compute_backoff(%{backoff_ms: base, restart_count: count}) do
     delay = base * Integer.pow(2, count)
     min(delay, 60_000)
@@ -418,6 +438,9 @@ defmodule Overmind.Mission do
     Process.send_after(self(), :check_activity, timeout_s * 1000)
   end
 
+  # Split on newlines, keeping the last (possibly incomplete) chunk as the
+  # line buffer. Complete lines are returned for processing; the remainder
+  # waits for more data or gets flushed on port exit.
   defp split_lines(data) do
     case String.split(data, "\n", parts: :infinity) do
       [] -> {[], ""}

@@ -13,6 +13,7 @@ mix test                              # all unit tests
 mix test test/overmind/mission_test.exs  # single file
 mix test test/overmind/mission_test.exs:42  # single test by line
 mix dialyzer                          # type checking (typespecs are tests too)
+mix smoke                             # daemon lifecycle (build, start, run, ps, shutdown)
 ```
 
 ## E2E Testing
@@ -22,14 +23,10 @@ mix dialyzer                          # type checking (typespecs are tests too)
 Instead, run the smoke test after shell or integration changes:
 
 ```bash
-mix build 2>&1 | tail -1 && \
-  bin/overmind start && sleep 1 && \
-  bin/overmind run "echo hello" && sleep 1 && \
-  bin/overmind ps && \
-  bin/overmind shutdown
+mix smoke
 ```
 
-This verifies: build, daemon lifecycle, run, ps, and shutdown. Tell the user to run `mix e2e` themselves for full coverage.
+This builds the escript, starts the daemon, runs a command, checks ps, and shuts down. Tell the user to run `mix e2e` themselves for full coverage.
 
 ## TDD Cycle
 

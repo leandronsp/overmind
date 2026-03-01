@@ -53,7 +53,8 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │   ├── rules/
 │   │   ├── git.md               # Git conventions (commits, branches, staging)
 │   │   ├── testing.md           # ExUnit/TDD conventions
-│   │   └── elixir.md            # Elixir/OTP patterns and anti-patterns
+│   │   ├── elixir.md            # Elixir/OTP patterns and anti-patterns
+│   │   └── shell.md             # POSIX shell conventions and anti-patterns
 │   └── skills/
 │       ├── commit/SKILL.md      # Git commit (quick + detailed modes)
 │       ├── dev/SKILL.md         # TDD implementer with agent orchestration
@@ -63,6 +64,7 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │       ├── po/SKILL.md          # Product Owner (GitHub issue writer)
 │       └── pr/SKILL.md          # Pull request creator
 ├── test_e2e.sh                  # E2E test script (daemon + raw + claude + session)
+├── test_smoke.sh                # Smoke test (build, start, run, ps, shutdown)
 ├── mix.exs
 └── CLAUDE.md
 ```
@@ -86,6 +88,7 @@ sudo ln -sf "$(pwd)/bin/overmind" /usr/local/bin/overmind
 overmind start           # start the daemon
 overmind shutdown        # stop the daemon
 mix test                 # run unit tests (auto-rebuilds escript first)
+mix smoke                # smoke test (build, start daemon, run, ps, shutdown)
 mix e2e                  # run E2E tests (builds, starts daemon, tests all commands)
 ```
 
@@ -93,9 +96,10 @@ mix e2e                  # run E2E tests (builds, starts daemon, tests all comma
 
 ## Code Standards
 
-- Self-documenting function names, minimal comments
+- Self-documenting function names; comment non-obvious logic (WHY, not WHAT)
 - `mix test` must pass before committing
 - `mix dialyzer` must pass before committing
+- `mix smoke` must pass before committing
 - No external deps unless strictly necessary
 
 ## Typespecs
