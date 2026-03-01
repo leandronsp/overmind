@@ -25,8 +25,10 @@ defmodule Overmind.Mission do
     paused: false,
     restart_policy: :never,
     max_restarts: 5,
+    max_seconds: 60,
     backoff_ms: 1000,
     restart_count: 0,
+    restart_timestamps: [],
     activity_timeout: 0
   ]
 
@@ -48,8 +50,10 @@ defmodule Overmind.Mission do
           paused: boolean(),
           restart_policy: :never | :on_failure | :always,
           max_restarts: non_neg_integer(),
+          max_seconds: non_neg_integer(),
           backoff_ms: non_neg_integer(),
           restart_count: non_neg_integer(),
+          restart_timestamps: [integer()],
           restart_timer_ref: reference() | nil,
           activity_timeout: non_neg_integer(),
           last_activity_at: integer() | nil,
@@ -81,6 +85,7 @@ defmodule Overmind.Mission do
     name = Keyword.get(opts, :name) || Overmind.Mission.Name.generate()
     restart_policy = Keyword.get(opts, :restart_policy, :never)
     max_restarts = Keyword.get(opts, :max_restarts, 5)
+    max_seconds = Keyword.get(opts, :max_seconds, 60)
     backoff_ms = Keyword.get(opts, :backoff_ms, 1000)
     activity_timeout = Keyword.get(opts, :activity_timeout, 0)
 
@@ -93,6 +98,7 @@ defmodule Overmind.Mission do
       name: name,
       restart_policy: restart_policy,
       max_restarts: max_restarts,
+      max_seconds: max_seconds,
       backoff_ms: backoff_ms,
       activity_timeout: activity_timeout
     })
@@ -255,6 +261,7 @@ defmodule Overmind.Mission do
   def init(%{id: id, command: command, provider: provider, type: type, cwd: cwd, name: name} = args) do
     restart_policy = Map.get(args, :restart_policy, :never)
     max_restarts = Map.get(args, :max_restarts, 5)
+    max_seconds = Map.get(args, :max_seconds, 60)
     backoff_ms = Map.get(args, :backoff_ms, 1000)
     activity_timeout = Map.get(args, :activity_timeout, 0)
 
@@ -286,6 +293,7 @@ defmodule Overmind.Mission do
        name: name,
        restart_policy: restart_policy,
        max_restarts: max_restarts,
+       max_seconds: max_seconds,
        backoff_ms: backoff_ms,
        activity_timeout: activity_timeout,
        last_activity_at: last_activity_at,
@@ -437,6 +445,7 @@ defmodule Overmind.Mission do
     count = state.restart_count + 1
     timestamp = Calendar.strftime(DateTime.utc_now(), "%Y-%m-%dT%H:%M:%SZ")
     marker = "--- restart ##{count} at #{timestamp} ---\n"
+    now_mono = System.monotonic_time(:millisecond)
 
     port_command = build_port_command(state.type, state.provider, state.command, state.session_id)
     port_opts = [:binary, :exit_status, :stderr_to_stdout] ++ maybe_cd(state.cwd)
@@ -458,6 +467,7 @@ defmodule Overmind.Mission do
          os_pid: os_pid,
          logs: state.logs <> marker,
          restart_count: count,
+         restart_timestamps: state.restart_timestamps ++ [now_mono],
          restart_timer_ref: nil,
          stopping: false,
          paused: false,
@@ -526,12 +536,18 @@ defmodule Overmind.Mission do
   defp should_restart?(%{restart_policy: :never}, _status), do: false
   defp should_restart?(%{restart_policy: :on_failure}, :stopped), do: false
 
-  defp should_restart?(%{max_restarts: max, restart_count: count}, _status)
-       when max > 0 and count >= max,
-       do: false
+  defp should_restart?(%{restart_policy: policy} = state, _status)
+       when policy in [:on_failure, :always],
+       do: within_restart_budget?(state)
 
-  defp should_restart?(%{restart_policy: policy}, _status) when policy in [:on_failure, :always],
-    do: true
+  defp within_restart_budget?(%{max_restarts: 0}), do: true
+
+  defp within_restart_budget?(%{max_restarts: max, max_seconds: window, restart_timestamps: timestamps}) do
+    now = System.monotonic_time(:millisecond)
+    cutoff = now - window * 1000
+    recent = Enum.count(timestamps, fn t -> t >= cutoff end)
+    recent < max
+  end
 
   defp compute_backoff(%{backoff_ms: base, restart_count: count}) do
     delay = base * Integer.pow(2, count)

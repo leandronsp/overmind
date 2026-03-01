@@ -92,6 +92,7 @@ cmd_run() {
   name=""
   restart=""
   max_restarts=""
+  max_seconds=""
   backoff=""
   activity_timeout=""
 
@@ -103,6 +104,7 @@ cmd_run() {
       --name)             name="$2"; shift 2 ;;
       --restart)          restart="$2"; shift 2 ;;
       --max-restarts)     max_restarts="$2"; shift 2 ;;
+      --max-seconds)      max_seconds="$2"; shift 2 ;;
       --backoff)          backoff="$2"; shift 2 ;;
       --activity-timeout) activity_timeout="$2"; shift 2 ;;
       *)                  command="$command $1"; shift ;;
@@ -130,6 +132,9 @@ cmd_run() {
   fi
   if [ -n "$max_restarts" ]; then
     extra="$extra,\"max_restarts\":$max_restarts"
+  fi
+  if [ -n "$max_seconds" ]; then
+    extra="$extra,\"max_seconds\":$max_seconds"
   fi
   if [ -n "$backoff" ]; then
     extra="$extra,\"backoff\":$backoff"
@@ -266,7 +271,8 @@ Commands:
   run --cwd <path>         Set working directory
   run --name <name>        Set agent name (auto-generated if omitted)
   run --restart <policy>   Restart policy: never, on-failure, always
-  run --max-restarts <n>   Max restart attempts (0 = unlimited, default 5)
+  run --max-restarts <n>   Max restart attempts within window (0 = unlimited, default 5)
+  run --max-seconds <s>    Sliding window for restart budget (default 60)
   run --backoff <ms>       Base backoff in ms (default 1000, exponential)
   run --activity-timeout <s>  Kill after N seconds of no output (0 = disabled)
   claude run <prompt>      Spawn a Claude agent (task mode)

@@ -18,6 +18,7 @@ defmodule Overmind do
     name = Keyword.get(opts, :name)
     restart_policy = Keyword.get(opts, :restart_policy, :never)
     max_restarts = Keyword.get(opts, :max_restarts, 5)
+    max_seconds = Keyword.get(opts, :max_seconds, 60)
     backoff_ms = Keyword.get(opts, :backoff_ms, 1000)
     activity_timeout = Keyword.get(opts, :activity_timeout, 0)
 
@@ -27,6 +28,7 @@ defmodule Overmind do
       start_mission(command, provider, type, cwd, name,
         restart_policy: restart_policy,
         max_restarts: max_restarts,
+        max_seconds: max_seconds,
         backoff_ms: backoff_ms,
         activity_timeout: activity_timeout
       )

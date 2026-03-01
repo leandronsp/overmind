@@ -502,6 +502,61 @@ defmodule Overmind.MissionTest do
     end
   end
 
+  describe "restart: sliding window" do
+    test "slow crashes don't exhaust restart budget" do
+      # Each run sleeps 1.5s then crashes. Window is 1s.
+      # Since crashes are spaced > 1s apart, only 1 restart is ever "in window"
+      # so max_restarts: 1 never triggers — process keeps restarting.
+      tmpfile = Path.join(System.tmp_dir!(), "overmind_sw_#{:rand.uniform(1_000_000)}")
+      File.write!(tmpfile, "0")
+
+      cmd = "sh -c 'n=$(cat #{tmpfile}); n=$((n+1)); echo $n > #{tmpfile}; if [ $n -ge 4 ]; then exit 0; else sleep 1.5; exit 1; fi'"
+
+      id = Mission.generate_id()
+
+      {:ok, pid} =
+        Mission.start_link(
+          id: id,
+          command: cmd,
+          restart_policy: :on_failure,
+          max_restarts: 1,
+          max_seconds: 1,
+          backoff_ms: 50
+        )
+
+      ref = Process.monitor(pid)
+      # With flat counter: would stop after 1 restart (2 runs total)
+      # With sliding window: each crash >1s apart, so budget resets each time
+      # Runs 1-3 fail, run 4 exits 0 → stopped
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 15_000
+
+      [{^id, _, _, :stopped, _}] = :ets.lookup(:overmind_missions, id)
+      assert Overmind.Mission.Store.lookup_restart_count(id) == 3
+
+      File.rm(tmpfile)
+    end
+
+    test "fast crashes within window exhaust budget" do
+      id = Mission.generate_id()
+
+      {:ok, pid} =
+        Mission.start_link(
+          id: id,
+          command: "false",
+          restart_policy: :on_failure,
+          max_restarts: 2,
+          max_seconds: 60,
+          backoff_ms: 50
+        )
+
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 5000
+
+      [{^id, _, _, :crashed, _}] = :ets.lookup(:overmind_missions, id)
+      assert Overmind.Mission.Store.lookup_restart_count(id) == 2
+    end
+  end
+
   describe "restart: exponential backoff" do
     test "restart delay increases exponentially" do
       id = Mission.generate_id()

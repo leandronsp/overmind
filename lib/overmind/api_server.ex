@@ -24,6 +24,7 @@ defmodule Overmind.APIServer do
       |> maybe_add_name(name)
       |> maybe_add_restart(Map.get(args, "restart"))
       |> maybe_add_int(:max_restarts, Map.get(args, "max_restarts"))
+      |> maybe_add_int(:max_seconds, Map.get(args, "max_seconds"))
       |> maybe_add_int(:backoff_ms, Map.get(args, "backoff"))
       |> maybe_add_int(:activity_timeout, Map.get(args, "activity_timeout"))
 

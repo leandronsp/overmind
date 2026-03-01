@@ -313,6 +313,38 @@ fi
 $CLI stop "$id" >/dev/null
 sleep 1
 
+echo -e "\n${YELLOW}=== Sliding window: slow stalls restart beyond max ===${NC}"
+# max_restarts=1 within 1s window, but each stall takes 2s → never 2 restarts in 1s
+out=$($CLI run --restart on-failure --max-restarts 1 --max-seconds 1 --backoff 50 --activity-timeout 2 "sleep 60")
+id=$(extract_id "$out")
+assert_contains "started" "$out" "Started mission"
+# After 2s: stall kill → restart (window clear) → 2s: stall kill → restart...
+# Wait long enough for 2 full stall cycles (each ~2s stall + restart)
+sleep 7
+restarts=$($CLI ps | grep "$id" | awk '{print $5}' || true)
+if [ "$restarts" -ge 2 ] 2>/dev/null; then
+  echo -e "  ${GREEN}✓${NC} restarted $restarts times (exceeds max_restarts=1 via sliding window)"
+  ((pass++))
+else
+  echo -e "  ${RED}✗${NC} expected >=2 restarts, got '$restarts'"
+  ((fail++))
+fi
+status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
+assert_eq "still running or restarting" "$status" "running"
+$CLI stop "$id" >/dev/null
+sleep 1
+
+echo -e "\n${YELLOW}=== Sliding window: fast crash loop trips circuit breaker ===${NC}"
+# max_restarts=2 within 60s window, command exits instantly → 2 restarts in <1s → stops
+out=$($CLI run --restart on-failure --max-restarts 2 --max-seconds 60 --backoff 50 "false")
+id=$(extract_id "$out")
+assert_contains "started" "$out" "Started mission"
+sleep 3
+status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
+assert_eq "crashed from crash loop" "$status" "crashed"
+restarts=$($CLI ps | grep "$id" | awk '{print $5}' || true)
+assert_eq "exactly 2 restarts" "$restarts" "2"
+
 echo -e "\n${YELLOW}=== Cleanup ===${NC}"
 $CLI shutdown
 
