@@ -223,6 +223,22 @@ defmodule Overmind.MissionTest do
     end
   end
 
+  describe "parent" do
+    test "stores parent_id when provided" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60", parent: "parent-123")
+
+      assert Overmind.Mission.Store.lookup_parent(id) == "parent-123"
+    end
+
+    test "does not store parent when nil" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60")
+
+      assert Overmind.Mission.Store.lookup_parent(id) == nil
+    end
+  end
+
   describe "cwd" do
     test "pwd with cwd /tmp shows tmp in logs" do
       id = Mission.generate_id()
@@ -727,6 +743,106 @@ defmodule Overmind.MissionTest do
       Client.stop(id)
       ref = Process.monitor(pid)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
+    end
+  end
+
+  describe "kill_cascade/1" do
+    test "kills parent and all children" do
+      parent_id = Mission.generate_id()
+      {:ok, _ppid} = Mission.start_link(id: parent_id, command: "sleep 60")
+
+      child_id = Mission.generate_id()
+      {:ok, _cpid} = Mission.start_link(id: child_id, command: "sleep 60", parent: parent_id)
+      Process.sleep(50)
+
+      assert :ok = Client.kill_cascade(parent_id)
+      Process.sleep(50)
+
+      assert :ets.lookup(:overmind_missions, parent_id) == []
+      assert :ets.lookup(:overmind_missions, child_id) == []
+    end
+
+    test "kills nested grandchildren" do
+      gp_id = Mission.generate_id()
+      {:ok, _} = Mission.start_link(id: gp_id, command: "sleep 60")
+
+      p_id = Mission.generate_id()
+      {:ok, _} = Mission.start_link(id: p_id, command: "sleep 60", parent: gp_id)
+
+      c_id = Mission.generate_id()
+      {:ok, _} = Mission.start_link(id: c_id, command: "sleep 60", parent: p_id)
+      Process.sleep(50)
+
+      assert :ok = Client.kill_cascade(gp_id)
+      Process.sleep(50)
+
+      assert :ets.lookup(:overmind_missions, gp_id) == []
+      assert :ets.lookup(:overmind_missions, p_id) == []
+      assert :ets.lookup(:overmind_missions, c_id) == []
+    end
+
+    test "returns :not_found for unknown mission" do
+      assert {:error, :not_found} = Client.kill_cascade("nonexist")
+    end
+  end
+
+  describe "wait/2" do
+    test "returns immediately for already-exited mission with status and exit_code" do
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "true")
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+
+      assert {:ok, %{status: :stopped, exit_code: 0}} = Client.wait(id)
+    end
+
+    test "returns :not_found for unknown mission" do
+      assert {:error, :not_found} = Client.wait("nonexist")
+    end
+
+    test "blocks until running mission finishes" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sh -c 'sleep 0.5; exit 3'")
+
+      assert {:ok, %{status: :crashed, exit_code: 3}} = Client.wait(id)
+    end
+
+    test "with timeout returns {:error, :timeout}" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60")
+
+      assert {:error, :timeout} = Client.wait(id, 100)
+    end
+
+    test "multiple waiters all receive result" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sh -c 'sleep 0.3; exit 0'")
+
+      task1 = Task.async(fn -> Client.wait(id) end)
+      task2 = Task.async(fn -> Client.wait(id) end)
+
+      assert {:ok, %{status: :stopped, exit_code: 0}} = Task.await(task1, 3000)
+      assert {:ok, %{status: :stopped, exit_code: 0}} = Task.await(task2, 3000)
+    end
+  end
+
+  describe "exit code storage" do
+    test "stores exit code 0 for successful command" do
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "true")
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+
+      assert Overmind.Mission.Store.lookup_exit_code(id) == 0
+    end
+
+    test "stores non-zero exit code for failed command" do
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "sh -c 'exit 42'")
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+
+      assert Overmind.Mission.Store.lookup_exit_code(id) == 42
     end
   end
 

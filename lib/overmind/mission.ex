@@ -88,6 +88,7 @@ defmodule Overmind.Mission do
     max_seconds = Keyword.get(opts, :max_seconds, 60)
     backoff_ms = Keyword.get(opts, :backoff_ms, 1000)
     activity_timeout = Keyword.get(opts, :activity_timeout, 0)
+    parent = Keyword.get(opts, :parent)
 
     GenServer.start_link(__MODULE__, %{
       id: id,
@@ -100,7 +101,8 @@ defmodule Overmind.Mission do
       max_restarts: max_restarts,
       max_seconds: max_seconds,
       backoff_ms: backoff_ms,
-      activity_timeout: activity_timeout
+      activity_timeout: activity_timeout,
+      parent: parent
     })
   end
 
@@ -126,6 +128,7 @@ defmodule Overmind.Mission do
     Store.insert_name(id, name)
     Store.insert_restart_policy(id, restart_policy)
     maybe_store_cwd(id, cwd)
+    maybe_store_parent(id, Map.get(args, :parent))
     send_initial_prompt(type, port, provider, command)
 
     activity_timer_ref = schedule_activity_check(activity_timeout)
@@ -260,6 +263,7 @@ defmodule Overmind.Mission do
     }
 
     cancel_timer(state.activity_timer_ref)
+    Store.insert_exit_code(state.id, code)
     status = exit_status(state.stopping, code)
 
     case should_restart?(state, status) do
@@ -384,6 +388,9 @@ defmodule Overmind.Mission do
 
   defp maybe_store_cwd(_id, nil), do: :ok
   defp maybe_store_cwd(id, cwd), do: Store.insert_cwd(id, cwd)
+
+  defp maybe_store_parent(_id, nil), do: :ok
+  defp maybe_store_parent(id, parent_id), do: Store.insert_parent(id, parent_id)
 
   defp send_initial_prompt(:session, port, provider, command) when command != "" do
     Port.command(port, provider.build_input_message(command))

@@ -219,6 +219,42 @@ defmodule Overmind.Mission.StoreTest do
     end
   end
 
+  describe "insert_parent/2 and lookup_parent/1" do
+    test "stores and retrieves parent id" do
+      Store.insert_parent("child1", "parent1")
+      assert Store.lookup_parent("child1") == "parent1"
+    end
+
+    test "returns nil for unknown id" do
+      assert Store.lookup_parent("nope") == nil
+    end
+  end
+
+  describe "find_children/1" do
+    test "returns child ids for a parent" do
+      Store.insert_parent("child1", "parent1")
+      Store.insert_parent("child2", "parent1")
+
+      children = Store.find_children("parent1")
+      assert Enum.sort(children) == ["child1", "child2"]
+    end
+
+    test "returns empty list for no children" do
+      assert Store.find_children("nope") == []
+    end
+  end
+
+  describe "insert_exit_code/2 and lookup_exit_code/1" do
+    test "stores and retrieves exit code" do
+      Store.insert_exit_code("m1", 42)
+      assert Store.lookup_exit_code("m1") == 42
+    end
+
+    test "returns nil for unknown id" do
+      assert Store.lookup_exit_code("nope") == nil
+    end
+  end
+
   describe "insert_last_activity/2 and lookup_last_activity/1" do
     test "stores and retrieves last activity timestamp" do
       Store.insert_last_activity("m1", 1_709_000_000)
@@ -231,7 +267,7 @@ defmodule Overmind.Mission.StoreTest do
   end
 
   describe "cleanup/1 with all metadata" do
-    test "removes type, session_id, attached, cwd, name, restart and activity entries" do
+    test "removes all metadata entries" do
       Store.insert("m1", {self(), "cmd", :stopped, 100})
       Store.insert_type("m1", :session)
       Store.insert_session_id("m1", "sess-abc")
@@ -241,6 +277,8 @@ defmodule Overmind.Mission.StoreTest do
       Store.insert_restart_policy("m1", :on_failure)
       Store.insert_restart_count("m1", 2)
       Store.insert_last_activity("m1", 1_000_000)
+      Store.insert_exit_code("m1", 1)
+      Store.insert_parent("m1", "p1")
       Store.persist_after_exit("m1", "logs", [])
 
       Store.cleanup("m1")
@@ -253,6 +291,8 @@ defmodule Overmind.Mission.StoreTest do
       assert Store.lookup_restart_policy("m1") == :never
       assert Store.lookup_restart_count("m1") == 0
       assert Store.lookup_last_activity("m1") == nil
+      assert Store.lookup_exit_code("m1") == nil
+      assert Store.lookup_parent("m1") == nil
     end
   end
 

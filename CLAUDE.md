@@ -15,16 +15,17 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │   ├── overmind               # Shell script CLI (dispatch + source)
 │   └── cli/
 │       ├── helpers.sh         # JSON helpers (escape, send_cmd, extract_ok, maybe_json_*)
-│       └── commands.sh        # All cmd_* functions (run, ps, logs, attach, etc.)
+│       ├── commands.sh        # All cmd_* functions (run, ps, logs, attach, etc.)
+│       └── orchestration.sh  # Orchestration commands (wait)
 ├── lib/
-│   ├── overmind.ex              # Public API (run, ps, logs, stop, kill, format_ps)
+│   ├── overmind.ex              # Public API (run, ps, logs, stop, kill, wait, children, format_ps)
 │   └── overmind/
 │       ├── application.ex       # OTP Application (ETS + DynamicSupervisor)
 │       ├── entrypoint.ex        # Escript entry point (daemon bootstrap only)
 │       ├── daemon.ex            # Daemon runner (starts APIServer, sleeps forever)
 │       ├── mission.ex           # GenServer per spawned process (Port)
 │       ├── mission/
-│       │   ├── client.ex        # Client API (get_logs, stop, kill, pause, info, etc.)
+│       │   ├── client.ex        # Client API (get_logs, stop, kill, wait, kill_cascade, pause, info)
 │       │   ├── store.ex         # ETS operations for mission state
 │       │   └── name.ex          # Agent name generator (adjective-noun)
 │       ├── provider.ex          # Provider behaviour (build_command, parse_line, format_for_logs)
@@ -76,8 +77,9 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 - **Daemon** (`Overmind.Daemon`): Starts APIServer and sleeps forever (shell script handles lifecycle)
 - **Missions**: Each spawned command is a GenServer (`Mission`) under DynamicSupervisor, managing a Port. Client API in `Mission.Client`
 - **Providers**: Pluggable command builders/parsers — Raw wraps with `sh -c`, Claude parses stream-json
-- **ETS**: Mission state (status, logs, raw_events, name, cwd, restart_policy, restart_count, last_activity) persists after GenServer exits
+- **ETS**: Mission state (status, logs, raw_events, name, cwd, restart_policy, restart_count, last_activity, exit_code, parent) persists after GenServer exits
 - **Self-Healing**: Restart policies (`:never`, `:on_failure`, `:always`), exponential backoff, stall detection via activity timeout
+- **Orchestration**: Parent hierarchy (`--parent`), `wait` (monitor-based blocking), `kill --cascade` (depth-first), `ps --tree`
 - **Name Resolution**: `Store.resolve_id/1` — all public APIs accept id or agent name
 
 ## Build & Run
@@ -206,7 +208,7 @@ Typespecs serve as deterministic constraints on LLM-generated code — the type 
 - **M0.5** — CWD + Names (done): `--cwd`, `--name`, auto-generated names, name resolution in all commands, refactored Socket→APIServer, CLI→Entrypoint, gutted Daemon
 - **M1** — Session Agents (done): `--type session`, long-running multi-turn agents, `send`, `attach` (hybrid PTY), bidirectional stream-json
 - **M2** — Self-Healing (done): restart policies (`--restart on-failure|always`), exponential backoff (`--backoff`), stall detection (`--activity-timeout`), `--max-restarts`, session resume via `--resume`, `info` command (os_pid)
-- **M2.5** — Orchestration Loop: supervised Ralph Loop — `overmind wait`, `--parent`, `ps --tree`, `kill --cascade`. Session agent as orchestrator (decompose → spawn → wait → validate → record → next)
+- **M2.5** — Orchestration Primitives (done): `wait` (monitor-based blocking), `--parent` hierarchy, `ps --tree`, `kill --cascade`, exit code storage
 - **M3** — Declarative Config: Blueprint TOML
 - **M4** — Full Isolation: worktree + port allocation + Docker
 - **M5** — Shared Akasha: distributed memory

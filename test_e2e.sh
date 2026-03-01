@@ -345,6 +345,92 @@ assert_eq "crashed from crash loop" "$status" "crashed"
 restarts=$($CLI ps | grep "$id" | awk '{print $5}' || true)
 assert_eq "exactly 2 restarts" "$restarts" "2"
 
+echo -e "\n${YELLOW}=== Wait: blocks until finish ===${NC}"
+out=$($CLI run "sh -c 'sleep 1; exit 0'")
+id=$(extract_id "$out")
+assert_contains "started" "$out" "Started mission"
+wait_out=$($CLI wait "$id")
+assert_contains "wait result" "$wait_out" "finished"
+assert_contains "wait exit code" "$wait_out" "exit code 0"
+assert_contains "wait status" "$wait_out" "stopped"
+
+echo -e "\n${YELLOW}=== Wait: already-exited mission ===${NC}"
+out=$($CLI run "true")
+id=$(extract_id "$out")
+sleep 1
+wait_out=$($CLI wait "$id")
+assert_contains "immediate wait" "$wait_out" "finished"
+assert_contains "exit code 0" "$wait_out" "exit code 0"
+
+echo -e "\n${YELLOW}=== Wait: timeout ===${NC}"
+out=$($CLI run "sleep 60")
+id=$(extract_id "$out")
+sleep 0.5
+wait_out=$($CLI wait "$id" --timeout 500 2>&1 || true)
+assert_contains "timeout error" "$wait_out" "timeout"
+$CLI kill "$id" >/dev/null
+
+echo -e "\n${YELLOW}=== Wait: non-zero exit code ===${NC}"
+out=$($CLI run "sh -c 'exit 42'")
+id=$(extract_id "$out")
+wait_exit=0
+$CLI wait "$id" || wait_exit=$?
+assert_eq "exit code propagated" "$wait_exit" "42"
+
+echo -e "\n${YELLOW}=== Parent: run with --parent ===${NC}"
+out=$($CLI run --name "e2e-parent" "sleep 60")
+parent_id=$(extract_id "$out")
+assert_contains "parent started" "$out" "Started mission"
+out=$($CLI run --parent "$parent_id" "sleep 60")
+child_id=$(extract_id "$out")
+assert_contains "child started" "$out" "Started mission"
+sleep 1
+
+echo -e "\n${YELLOW}=== Parent: ps --tree shows hierarchy ===${NC}"
+tree_out=$($CLI ps --tree)
+assert_contains "tree shows parent" "$tree_out" "$parent_id"
+assert_contains "tree shows child" "$tree_out" "$child_id"
+
+echo -e "\n${YELLOW}=== Parent: ps --children ===${NC}"
+children_out=$($CLI ps --children "$parent_id")
+assert_contains "children shows child" "$children_out" "$child_id"
+
+echo -e "\n${YELLOW}=== Parent: --parent by name ===${NC}"
+out=$($CLI run --parent "e2e-parent" "sleep 60")
+child2_id=$(extract_id "$out")
+assert_contains "child by name started" "$out" "Started mission"
+children_out=$($CLI ps --children "$parent_id")
+assert_contains "children has child2" "$children_out" "$child2_id"
+
+echo -e "\n${YELLOW}=== Parent: invalid parent ===${NC}"
+out=$($CLI run --parent "nonexist" "sleep 60" 2>&1 || true)
+assert_contains "parent not found" "$out" "parent_not_found"
+
+echo -e "\n${YELLOW}=== Kill cascade: removes parent and children ===${NC}"
+$CLI kill "$parent_id" --cascade >/dev/null
+sleep 1
+found_parent=$($CLI ps | grep "$parent_id" || true)
+assert_eq "parent removed" "$found_parent" ""
+found_child=$($CLI ps | grep "$child_id" || true)
+assert_eq "child removed" "$found_child" ""
+found_child2=$($CLI ps | grep "$child2_id" || true)
+assert_eq "child2 removed" "$found_child2" ""
+
+echo -e "\n${YELLOW}=== Kill without cascade: children survive ===${NC}"
+out=$($CLI run "sleep 60")
+p_id=$(extract_id "$out")
+out=$($CLI run --parent "$p_id" "sleep 60")
+c_id=$(extract_id "$out")
+sleep 0.5
+$CLI kill "$p_id" >/dev/null
+sleep 0.5
+# grep by ^id to avoid matching parent column in child rows
+found_parent=$($CLI ps | awk '{print $1}' | grep "$p_id" || true)
+assert_eq "parent removed" "$found_parent" ""
+c_status=$($CLI ps | grep "$c_id" | awk '{print $4}' || true)
+assert_eq "child still running" "$c_status" "running"
+$CLI kill "$c_id" >/dev/null
+
 echo -e "\n${YELLOW}=== Cleanup ===${NC}"
 $CLI shutdown
 

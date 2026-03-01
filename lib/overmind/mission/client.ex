@@ -46,6 +46,21 @@ defmodule Overmind.Mission.Client do
     end
   end
 
+  @spec kill_cascade(String.t()) :: :ok | {:error, :not_found}
+  def kill_cascade(id) do
+    case Store.lookup(id) do
+      :not_found ->
+        {:error, :not_found}
+
+      _ ->
+        # Depth-first: kill children before parent
+        Store.find_children(id)
+        |> Enum.each(&kill_cascade/1)
+
+        kill(id)
+    end
+  end
+
   @spec send_message(String.t(), String.t()) :: :ok | {:error, :not_found | :not_running | :not_session | :paused}
   def send_message(id, message) do
     case {Store.lookup(id), Store.lookup_type(id)} do
@@ -85,6 +100,23 @@ defmodule Overmind.Mission.Client do
     end
   end
 
+  @spec wait(String.t(), non_neg_integer() | nil) :: {:ok, map()} | {:error, :not_found | :timeout}
+  def wait(id, timeout \\ nil) do
+    case Store.lookup(id) do
+      {:exited, status, _, _} ->
+        {:ok, %{status: status, exit_code: Store.lookup_exit_code(id)}}
+
+      {:running, pid, _, _} ->
+        wait_for_process(pid, id, timeout)
+
+      {:restarting, pid, _, _} ->
+        wait_for_process(pid, id, timeout)
+
+      :not_found ->
+        {:error, :not_found}
+    end
+  end
+
   @spec get_info(String.t()) :: {:ok, map()} | {:error, :not_found}
   def get_info(id) do
     case Store.lookup(id) do
@@ -104,6 +136,28 @@ defmodule Overmind.Mission.Client do
 
   # Private helpers
 
+  defp wait_for_process(pid, id, timeout) do
+    ref = Process.monitor(pid)
+
+    receive do
+      {:DOWN, ^ref, :process, ^pid, _} ->
+        case Store.lookup(id) do
+          {:exited, status, _, _} ->
+            {:ok, %{status: status, exit_code: Store.lookup_exit_code(id)}}
+
+          _ ->
+            {:ok, %{status: :crashed, exit_code: Store.lookup_exit_code(id)}}
+        end
+    after
+      timeout_ms(timeout) ->
+        Process.demonitor(ref, [:flush])
+        {:error, :timeout}
+    end
+  end
+
+  defp timeout_ms(nil), do: :infinity
+  defp timeout_ms(ms), do: ms
+
   defp build_info(id, command, status, started_at, os_pid) do
     %{
       id: id,
@@ -116,7 +170,9 @@ defmodule Overmind.Mission.Client do
       cwd: Store.lookup_cwd(id),
       restart_policy: Store.lookup_restart_policy(id),
       restart_count: Store.lookup_restart_count(id),
-      last_activity: Store.lookup_last_activity(id)
+      last_activity: Store.lookup_last_activity(id),
+      parent: Store.lookup_parent(id),
+      children: length(Store.find_children(id))
     }
   end
 
