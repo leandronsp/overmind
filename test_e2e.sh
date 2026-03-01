@@ -41,6 +41,7 @@ mix build 2>&1 | tail -1
 echo -e "\n${YELLOW}=== Daemon ===${NC}"
 $CLI shutdown 2>/dev/null || true
 sleep 0.5
+rm -f "$HOME/.overmind/overmind.sock" "$HOME/.overmind/daemon.pid"
 $CLI start
 sleep 1
 
