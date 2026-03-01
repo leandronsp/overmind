@@ -42,8 +42,13 @@ unescape_json() {
 
 cmd_start() {
   if [ -S "$SOCK" ]; then
-    echo "Daemon is already running"
-    return 0
+    # verify daemon is actually alive by poking the socket
+    if printf '{"cmd":"ping"}\n' | nc -U "$SOCK" >/dev/null 2>&1; then
+      echo "Daemon is already running"
+      return 0
+    fi
+    # stale socket — clean up
+    rm -f "$SOCK" "$PIDFILE"
   fi
 
   mkdir -p "$(dirname "$SOCK")"
