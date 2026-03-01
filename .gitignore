@@ -8,3 +8,4 @@ overmind-*.tar
 /tmp/
 .elixir_ls/
 /overmind
+/overmind_daemon

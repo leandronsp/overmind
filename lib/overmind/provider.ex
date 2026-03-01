@@ -12,6 +12,8 @@ defmodule Overmind.Provider do
           | {:ignored, map()}
 
   @callback build_command(String.t()) :: String.t()
+  @callback build_session_command() :: String.t()
+  @callback build_input_message(String.t()) :: String.t()
   @callback parse_line(String.t()) :: {event(), map() | nil}
   @callback format_for_logs(event()) :: String.t()
 end

@@ -4,6 +4,8 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+CLI="./bin/overmind"
+
 pass=0
 fail=0
 
@@ -37,48 +39,75 @@ echo -e "${YELLOW}=== Building ===${NC}"
 mix build 2>&1 | tail -1
 
 echo -e "\n${YELLOW}=== Daemon ===${NC}"
-./overmind shutdown 2>/dev/null || true
+$CLI shutdown 2>/dev/null || true
 sleep 0.5
-./overmind start
+rm -f "$HOME/.overmind/overmind.sock" "$HOME/.overmind/daemon.pid"
+$CLI start
 sleep 1
 
 echo -e "\n${YELLOW}=== Raw: simple echo ===${NC}"
-out=$(./overmind run "echo hello")
+out=$($CLI run "echo hello")
 id=$(extract_id "$out")
 assert_contains "started" "$out" "Started mission"
 sleep 1
-logs=$(./overmind logs "$id" || true)
+logs=$($CLI logs "$id" || true)
 assert_contains "logs" "$logs" "hello"
-status=$(./overmind ps | grep "$id" | awk '{print $2}' || true)
+status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
 assert_eq "stopped" "$status" "stopped"
 
+echo -e "\n${YELLOW}=== Names: run with --name ===${NC}"
+out=$($CLI run --name my-agent "echo named")
+id=$(extract_id "$out")
+assert_contains "started with name" "$out" "Started mission"
+sleep 1
+ps_out=$($CLI ps)
+assert_contains "ps shows name" "$ps_out" "my-agent"
+logs=$($CLI logs "my-agent" || true)
+assert_contains "logs by name" "$logs" "named"
+
+echo -e "\n${YELLOW}=== Names: stop by name ===${NC}"
+out=$($CLI run --name stopper "sleep 60")
+sleep 1
+$CLI stop "stopper" >/dev/null
+sleep 1
+status=$($CLI ps | grep "stopper" | awk '{print $4}' || true)
+assert_eq "stopped by name" "$status" "stopped"
+
+echo -e "\n${YELLOW}=== Raw: cwd ===${NC}"
+out=$($CLI run --cwd /tmp "pwd")
+id=$(extract_id "$out")
+assert_contains "started with cwd" "$out" "Started mission"
+sleep 1
+logs=$($CLI logs "$id" || true)
+assert_contains "cwd logs show tmp" "$logs" "tmp"
+
 echo -e "\n${YELLOW}=== Raw: semicolon chain ===${NC}"
-out=$(./overmind run "echo oi; sleep 2; echo tchau")
+out=$($CLI run "echo oi; sleep 2; echo tchau")
 id=$(extract_id "$out")
 sleep 1
-logs=$(./overmind logs "$id" || true)
+logs=$($CLI logs "$id" || true)
 assert_contains "first output" "$logs" "oi"
-status=$(./overmind ps | grep "$id" | awk '{print $2}' || true)
+status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
 assert_eq "still running" "$status" "running"
 sleep 3
-logs=$(./overmind logs "$id" || true)
+logs=$($CLI logs "$id" || true)
 assert_contains "chain completed" "$logs" "tchau"
-status=$(./overmind ps | grep "$id" | awk '{print $2}' || true)
+status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
 assert_eq "stopped after chain" "$status" "stopped"
 
 echo -e "\n${YELLOW}=== Raw: && chain ===${NC}"
-out=$(./overmind run "echo first && sleep 1 && echo last")
+out=$($CLI run "echo first && sleep 1 && echo last")
 id=$(extract_id "$out")
 sleep 3
-logs=$(./overmind logs "$id" || true)
+logs=$($CLI logs "$id" || true)
 assert_contains "first" "$logs" "first"
 assert_contains "last" "$logs" "last"
 
 echo -e "\n${YELLOW}=== Raw: && short-circuit ===${NC}"
-out=$(./overmind run "echo before && false && echo after")
+out=$($CLI run "echo before && false && echo after")
 id=$(extract_id "$out")
 sleep 1
-logs=$(./overmind logs "$id" || true)
+logs=$($CLI logs "$id" || true)
 assert_contains "before runs" "$logs" "before"
 if echo "$logs" | grep -q "after"; then
   echo -e "  ${RED}✗${NC} after should not appear"
@@ -87,11 +116,25 @@ else
   echo -e "  ${GREEN}✓${NC} after skipped"
   ((pass++))
 fi
-status=$(./overmind ps | grep "$id" | awk '{print $2}' || true)
+status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
 assert_eq "crashed on false" "$status" "crashed"
 
+echo -e "\n${YELLOW}=== Session: spawn, send, logs ===${NC}"
+out=$($CLI run --type session)
+id=$(extract_id "$out")
+assert_contains "session started" "$out" "Started mission"
+sleep 0.5
+$CLI send "$id" "hello session" >/dev/null
+sleep 0.5
+logs=$($CLI logs "$id" || true)
+assert_contains "session log has human" "$logs" "\[human\] hello session"
+status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
+assert_eq "session running" "$status" "running"
+$CLI stop "$id" >/dev/null
+sleep 0.5
+
 echo -e "\n${YELLOW}=== Claude: run ===${NC}"
-out=$(./overmind claude run "write a haiku about elixir then another about erlang")
+out=$($CLI claude run "write a haiku about elixir then another about erlang")
 id=$(extract_id "$out")
 assert_contains "started" "$out" "Started mission"
 # poll until logs appear while still running
@@ -99,8 +142,8 @@ got_streaming=false
 echo -n "  waiting for streaming output"
 for i in $(seq 1 60); do
   sleep 0.5
-  status=$(./overmind ps | grep "$id" | awk '{print $2}' || true)
-  logs=$(./overmind logs "$id" || true)
+  status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
+  logs=$($CLI logs "$id" || true)
   if [ -n "$logs" ] && [ "$status" = "running" ]; then
     got_streaming=true
     break
@@ -119,13 +162,13 @@ fi
 # wait for finish
 echo -n "  waiting for finish"
 for i in $(seq 1 20); do
-  status=$(./overmind ps | grep "$id" | awk '{print $2}' || true)
+  status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
   [ "$status" != "running" ] && break
   echo -n "."
   sleep 2
 done
 echo ""
-logs=$(./overmind logs "$id" || true)
+logs=$($CLI logs "$id" || true)
 assert_contains "claude produced output" "$logs" "."
 if [ "$status" = "stopped" ] || [ "$status" = "crashed" ]; then
   echo -e "  ${GREEN}✓${NC} claude finished ($status)"
@@ -136,25 +179,25 @@ else
 fi
 
 echo -e "\n${YELLOW}=== Stop ===${NC}"
-out=$(./overmind run "sleep 60")
+out=$($CLI run "sleep 60")
 id=$(extract_id "$out")
 sleep 1
-./overmind stop "$id" >/dev/null
+$CLI stop "$id" >/dev/null
 sleep 1
-status=$(./overmind ps | grep "$id" | awk '{print $2}' || true)
+status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
 assert_eq "stopped" "$status" "stopped"
 
 echo -e "\n${YELLOW}=== Kill ===${NC}"
-out=$(./overmind run "sleep 60")
+out=$($CLI run "sleep 60")
 id=$(extract_id "$out")
 sleep 1
-./overmind kill "$id" >/dev/null
+$CLI kill "$id" >/dev/null
 sleep 1
-found=$(./overmind ps | grep "$id" || true)
+found=$($CLI ps | grep "$id" || true)
 assert_eq "removed from ps" "$found" ""
 
 echo -e "\n${YELLOW}=== Cleanup ===${NC}"
-./overmind shutdown
+$CLI shutdown
 
 echo -e "\n${YELLOW}==============================${NC}"
 echo -e "  ${GREEN}$pass passed${NC}, ${RED}$fail failed${NC}"

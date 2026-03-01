@@ -15,6 +15,31 @@ defmodule Overmind.Provider.ClaudeTest do
     end
   end
 
+  describe "build_session_command/0" do
+    test "returns claude with stream-json flags" do
+      cmd = Claude.build_session_command()
+      assert cmd =~ "claude -p"
+      assert cmd =~ "--input-format stream-json"
+      assert cmd =~ "--output-format stream-json"
+      assert cmd =~ "--verbose"
+    end
+  end
+
+  describe "build_input_message/1" do
+    test "returns stream-json user message" do
+      msg = Claude.build_input_message("hello")
+      {:ok, parsed} = JSON.decode(msg)
+      assert parsed["type"] == "user"
+      assert parsed["message"]["role"] == "user"
+      assert parsed["message"]["content"] == "hello"
+    end
+
+    test "message ends with newline" do
+      msg = Claude.build_input_message("hello")
+      assert String.ends_with?(msg, "\n")
+    end
+  end
+
   describe "parse_line/1" do
     test "non-JSON returns plain event" do
       assert Claude.parse_line("hello world") == {{:plain, "hello world"}, nil}

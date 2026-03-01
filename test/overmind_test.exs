@@ -33,12 +33,71 @@ defmodule OvermindTest do
     end
   end
 
+  describe "run/2 with keyword opts" do
+    test "accepts provider: option" do
+      {:ok, id} = Overmind.run("echo opts", provider: Overmind.Provider.TestClaude)
+      [{^id, pid, "echo opts", _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+    end
+
+    test "accepts type: :task (default)" do
+      {:ok, id} = Overmind.run("sleep 60", type: :task)
+      assert String.length(id) == 8
+    end
+
+    test "accepts type: :session with empty command" do
+      {:ok, id} = Overmind.run("", type: :session)
+      assert String.length(id) == 8
+    end
+
+    test "rejects unknown type" do
+      assert {:error, :invalid_type} = Overmind.run("echo hi", type: :bogus)
+    end
+
+    test "backward compat: atom second arg treated as provider" do
+      {:ok, id} = Overmind.run("echo compat", Overmind.Provider.Raw)
+      [{^id, _pid, "echo compat", _, _}] = :ets.lookup(:overmind_missions, id)
+    end
+
+    test "empty opts defaults to Raw provider and task type" do
+      {:ok, id} = Overmind.run("sleep 60", [])
+      assert String.length(id) == 8
+    end
+  end
+
+  describe "run/2 with name" do
+    test "name option sets agent name" do
+      {:ok, id} = Overmind.run("sleep 60", name: "my-agent")
+      assert Overmind.Mission.Store.lookup_name(id) == "my-agent"
+    end
+
+    test "auto-generates name when not provided" do
+      {:ok, id} = Overmind.run("sleep 60")
+      name = Overmind.Mission.Store.lookup_name(id)
+      assert name != nil
+      assert Regex.match?(~r/^[a-z]+-[a-z]+$/, name)
+    end
+  end
+
+  describe "run/2 with cwd" do
+    test "cwd option runs command in specified directory" do
+      {:ok, id} = Overmind.run("pwd", cwd: "/tmp")
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+
+      {:ok, logs} = Overmind.logs(id)
+      assert logs =~ "tmp"
+    end
+  end
+
   describe "ps/0" do
     test "empty list when no missions" do
       assert Overmind.ps() == []
     end
 
-    test "returns mission info with uptime" do
+    test "returns mission info with uptime and type" do
       {:ok, id} = Overmind.run("sleep 60")
       Process.sleep(10)
 
@@ -46,8 +105,18 @@ defmodule OvermindTest do
       assert mission.id == id
       assert mission.command == "sleep 60"
       assert mission.status == :running
+      assert mission.type == :task
       assert is_integer(mission.uptime)
       assert mission.uptime >= 0
+    end
+
+    test "includes name in mission info" do
+      {:ok, id} = Overmind.run("sleep 60", name: "ps-test")
+      Process.sleep(10)
+
+      [mission] = Overmind.ps()
+      assert mission.id == id
+      assert mission.name == "ps-test"
     end
 
     test "includes naturally exited missions" do
@@ -112,6 +181,31 @@ defmodule OvermindTest do
     end
   end
 
+  describe "send/2" do
+    test "sends message to session mission" do
+      {:ok, id} = Overmind.run("", type: :session)
+      Process.sleep(50)
+
+      assert :ok = Overmind.send(id, "hello")
+      Process.sleep(100)
+
+      {:ok, logs} = Overmind.logs(id)
+      assert logs =~ "[human] hello"
+      assert logs =~ "hello\n"
+    end
+
+    test "error for task mission" do
+      {:ok, id} = Overmind.run("sleep 60")
+      Process.sleep(50)
+
+      assert {:error, :not_session} = Overmind.send(id, "hello")
+    end
+
+    test "error for unknown mission" do
+      assert {:error, :not_found} = Overmind.send("nonexist", "hello")
+    end
+  end
+
   describe "stop/1" do
     test "stops a running mission, mission stays in ETS as :stopped" do
       {:ok, id} = Overmind.run("sleep 60")
@@ -173,6 +267,72 @@ defmodule OvermindTest do
 
     test "error for unknown mission" do
       assert {:error, :not_found} = Overmind.kill("nonexist")
+    end
+  end
+
+  describe "name resolution" do
+    test "logs by name" do
+      {:ok, id} = Overmind.run("echo byname", name: "test-logs")
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+
+      {:ok, logs} = Overmind.logs("test-logs")
+      assert logs =~ "byname"
+    end
+
+    test "stop by name" do
+      {:ok, id} = Overmind.run("sleep 60", name: "test-stop")
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
+
+      assert :ok = Overmind.stop("test-stop")
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
+    end
+
+    test "kill by name" do
+      {:ok, id} = Overmind.run("sleep 60", name: "test-kill")
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
+
+      assert :ok = Overmind.kill("test-kill")
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+    end
+  end
+
+  describe "format_ps/1" do
+    test "formats empty list with header only" do
+      output = Overmind.format_ps([])
+      assert output =~ "ID"
+      assert output =~ "NAME"
+      assert output =~ "TYPE"
+      assert output =~ "STATUS"
+      assert output =~ "UPTIME"
+      assert output =~ "COMMAND"
+    end
+
+    test "formats missions with columns" do
+      missions = [
+        %{id: "abc12345", name: "bold-arc", type: :task, status: :running, uptime: 30, command: "sleep 60"}
+      ]
+
+      output = Overmind.format_ps(missions)
+      assert output =~ "abc12345"
+      assert output =~ "bold-arc"
+      assert output =~ "task"
+      assert output =~ "running"
+      assert output =~ "30s"
+      assert output =~ "sleep 60"
+    end
+
+    test "formats uptime in minutes" do
+      missions = [%{id: "a1b2c3d4", name: "calm-beam", type: :task, status: :running, uptime: 120, command: "x"}]
+      assert Overmind.format_ps(missions) =~ "2m"
+    end
+
+    test "formats uptime in hours" do
+      missions = [%{id: "a1b2c3d4", name: "dark-core", type: :task, status: :stopped, uptime: 7200, command: "x"}]
+      assert Overmind.format_ps(missions) =~ "2h"
     end
   end
 end

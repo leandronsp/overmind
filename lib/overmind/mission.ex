@@ -11,10 +11,15 @@ defmodule Overmind.Mission do
     :os_pid,
     :started_at,
     :provider,
+    :session_id,
+    :cwd,
+    :name,
+    type: :task,
     logs: "",
     line_buffer: "",
     raw_events: [],
-    stopping: false
+    stopping: false,
+    paused: false
   ]
 
   @type t :: %__MODULE__{
@@ -24,10 +29,15 @@ defmodule Overmind.Mission do
           os_pid: non_neg_integer(),
           started_at: integer(),
           provider: module(),
+          session_id: String.t() | nil,
+          cwd: String.t() | nil,
+          name: String.t(),
+          type: :task | :session,
           logs: String.t(),
           line_buffer: String.t(),
           raw_events: [map()],
-          stopping: boolean()
+          stopping: boolean(),
+          paused: boolean()
         }
 
   @spec generate_id() :: String.t()
@@ -50,7 +60,10 @@ defmodule Overmind.Mission do
     id = Keyword.fetch!(opts, :id)
     command = Keyword.fetch!(opts, :command)
     provider = Keyword.get(opts, :provider, Overmind.Provider.Raw)
-    GenServer.start_link(__MODULE__, %{id: id, command: command, provider: provider})
+    type = Keyword.get(opts, :type, :task)
+    cwd = Keyword.get(opts, :cwd)
+    name = Keyword.get(opts, :name) || Overmind.Mission.Name.generate()
+    GenServer.start_link(__MODULE__, %{id: id, command: command, provider: provider, type: type, cwd: cwd, name: name})
   end
 
   @spec get_logs(String.t()) :: {:ok, String.t()} | {:error, :not_found}
@@ -86,6 +99,52 @@ defmodule Overmind.Mission do
       {:running, pid, _, _} -> kill_running(pid, id)
       {:exited, _, _, _} -> Store.cleanup(id)
       :not_found -> {:error, :not_found}
+    end
+  end
+
+  @spec send_message(String.t(), String.t()) :: :ok | {:error, :not_found | :not_running | :not_session | :paused}
+  def send_message(id, message) do
+    case {Store.lookup(id), Store.lookup_type(id)} do
+      {:not_found, _} -> {:error, :not_found}
+      {{:exited, _, _, _}, _} -> {:error, :not_running}
+      {{:running, _pid, _, _}, :task} -> {:error, :not_session}
+      {{:running, pid, _, _}, :session} -> checked_send(id, pid, message)
+    end
+  end
+
+  defp checked_send(id, pid, message) do
+    case Store.lookup_attached(id) do
+      true -> {:error, :paused}
+      false ->
+        GenServer.cast(pid, {:send, message})
+        :ok
+    end
+  end
+
+  @spec pause(String.t()) :: {:ok, String.t() | nil} | {:error, :not_found | :not_running | :not_session}
+  def pause(id) do
+    case {Store.lookup(id), Store.lookup_type(id)} do
+      {:not_found, _} -> {:error, :not_found}
+      {{:exited, _, _, _}, _} -> {:error, :not_running}
+      {{:running, _pid, _, _}, :task} -> {:error, :not_session}
+      {{:running, pid, _, _}, :session} ->
+        case Store.safe_call(pid, :pause) do
+          {:ok, session_id} -> {:ok, session_id}
+          :dead -> {:error, :not_running}
+        end
+    end
+  end
+
+  @spec unpause(String.t()) :: :ok | {:error, :not_found | :not_running}
+  def unpause(id) do
+    case Store.lookup(id) do
+      :not_found -> {:error, :not_found}
+      {:exited, _, _, _} -> {:error, :not_running}
+      {:running, pid, _, _} ->
+        case Store.safe_call(pid, :unpause) do
+          {:ok, :ok} -> :ok
+          :dead -> {:error, :not_running}
+        end
     end
   end
 
@@ -137,12 +196,17 @@ defmodule Overmind.Mission do
   # GenServer callbacks
 
   @impl true
-  def init(%{id: id, command: command, provider: provider}) do
-    port_command = provider.build_command(command) <> " < /dev/null"
-    port = Port.open({:spawn, port_command}, [:binary, :exit_status, :stderr_to_stdout])
+  def init(%{id: id, command: command, provider: provider, type: type, cwd: cwd, name: name}) do
+    port_command = build_port_command(type, provider, command)
+    port_opts = [:binary, :exit_status, :stderr_to_stdout] ++ maybe_cd(cwd)
+    port = Port.open({:spawn, port_command}, port_opts)
     {:os_pid, os_pid} = Port.info(port, :os_pid)
     now = System.system_time(:second)
     Store.insert(id, {self(), command, :running, now})
+    Store.insert_type(id, type)
+    Store.insert_name(id, name)
+    maybe_store_cwd(id, cwd)
+    send_initial_prompt(type, port, provider, command)
 
     {:ok,
      %__MODULE__{
@@ -151,7 +215,10 @@ defmodule Overmind.Mission do
        port: port,
        os_pid: os_pid,
        started_at: now,
-       provider: provider
+       provider: provider,
+       type: type,
+       cwd: cwd,
+       name: name
      }}
   end
 
@@ -171,6 +238,18 @@ defmodule Overmind.Mission do
   end
 
   @impl true
+  def handle_call(:pause, _from, state) do
+    Store.insert_attached(state.id, true)
+    {:reply, state.session_id, %{state | paused: true}}
+  end
+
+  @impl true
+  def handle_call(:unpause, _from, state) do
+    Store.insert_attached(state.id, false)
+    {:reply, :ok, %{state | paused: false}}
+  end
+
+  @impl true
   def handle_call({:stop, :sigterm}, _from, state) do
     System.cmd("kill", ["-15", Integer.to_string(state.os_pid)])
     {:reply, :ok, %{state | stopping: true}}
@@ -184,22 +263,33 @@ defmodule Overmind.Mission do
   end
 
   @impl true
+  def handle_cast({:send, message}, state) do
+    data = state.provider.build_input_message(message)
+    Port.command(state.port, data)
+    {:noreply, %{state | logs: state.logs <> "[human] #{message}\n"}}
+  end
+
+  @impl true
   def handle_info({port, {:data, data}}, %{port: port} = state) do
     {lines, remainder} = split_lines(state.line_buffer <> data)
 
-    {logs_append, new_raw_events} =
-      Enum.reduce(lines, {"", []}, fn line, {logs_acc, events_acc} ->
+    {logs_append, new_raw_events, session_id} =
+      Enum.reduce(lines, {"", [], state.session_id}, fn line, {logs_acc, events_acc, sid} ->
         {event, raw} = state.provider.parse_line(line)
         formatted = state.provider.format_for_logs(event)
-        {logs_acc <> formatted, maybe_append(events_acc, raw)}
+        new_sid = extract_session_id(event, sid)
+        {logs_acc <> formatted, maybe_append(events_acc, raw), new_sid}
       end)
+
+    maybe_store_session_id(session_id, state)
 
     {:noreply,
      %{
        state
        | logs: state.logs <> logs_append,
          line_buffer: remainder,
-         raw_events: state.raw_events ++ new_raw_events
+         raw_events: state.raw_events ++ new_raw_events,
+         session_id: session_id
      }}
   end
 
@@ -246,6 +336,33 @@ defmodule Overmind.Mission do
   defp exit_status(_stopping = true, _code), do: :stopped
   defp exit_status(_stopping, 0), do: :stopped
   defp exit_status(_stopping, _code), do: :crashed
+
+  defp extract_session_id({:system, %{"subtype" => "init", "session_id" => sid}}, _old), do: sid
+  defp extract_session_id(_, old), do: old
+
+  defp maybe_store_session_id(nil, _state), do: :ok
+  defp maybe_store_session_id(sid, %{session_id: sid}), do: :ok
+  defp maybe_store_session_id(sid, state), do: Store.insert_session_id(state.id, sid)
+
+  defp maybe_cd(nil), do: []
+  defp maybe_cd(cwd), do: [{:cd, String.to_charlist(cwd)}]
+
+  defp maybe_store_cwd(_id, nil), do: :ok
+  defp maybe_store_cwd(id, cwd), do: Store.insert_cwd(id, cwd)
+
+  defp send_initial_prompt(:session, port, provider, command) when command != "" do
+    Port.command(port, provider.build_input_message(command))
+  end
+
+  defp send_initial_prompt(_, _, _, _), do: :ok
+
+  defp build_port_command(:session, provider, _command) do
+    provider.build_session_command()
+  end
+
+  defp build_port_command(:task, provider, command) do
+    provider.build_command(command) <> " < /dev/null"
+  end
 
   defp split_lines(data) do
     case String.split(data, "\n", parts: :infinity) do

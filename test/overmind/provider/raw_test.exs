@@ -23,6 +23,18 @@ defmodule Overmind.Provider.RawTest do
     end
   end
 
+  describe "build_session_command/0" do
+    test "returns cat" do
+      assert Raw.build_session_command() == "cat"
+    end
+  end
+
+  describe "build_input_message/1" do
+    test "appends newline to message" do
+      assert Raw.build_input_message("hello") == "hello\n"
+    end
+  end
+
   describe "format_for_logs/1" do
     test "plain event appends newline" do
       assert Raw.format_for_logs({:plain, "hello"}) == "hello\n"

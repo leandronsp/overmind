@@ -35,6 +35,12 @@ defmodule Overmind.MissionTest do
       assert is_integer(started_at)
     end
 
+    test "stores type in ETS, defaults to :task" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60")
+      assert Overmind.Mission.Store.lookup_type(id) == :task
+    end
+
     test "stores original command in ETS, not wrapped" do
       id = Mission.generate_id()
       {:ok, _pid} = Mission.start_link(id: id, command: "hello", provider: Overmind.Provider.Claude)
@@ -158,6 +164,180 @@ defmodule Overmind.MissionTest do
 
       {:ok, events} = Mission.get_raw_events(id)
       assert events == []
+    end
+  end
+
+  describe "session mode" do
+    test "session mission stays alive (stdin open)" do
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "", type: :session)
+      Process.sleep(100)
+
+      assert Process.alive?(pid)
+      assert {:running, ^pid, _, _} = Overmind.Mission.Store.lookup(id)
+    end
+
+    test "session with initial prompt sends it via stdin" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "hello", type: :session)
+      Process.sleep(100)
+
+      {:ok, logs} = Mission.get_logs(id)
+      assert logs =~ "hello"
+    end
+
+    test "session with empty command sends nothing" do
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "", type: :session)
+      Process.sleep(100)
+
+      {:ok, logs} = Mission.get_logs(id)
+      assert logs == ""
+      assert Process.alive?(pid)
+    end
+
+    test "task mission with cat exits immediately (stdin closed)" do
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "cat")
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+    end
+  end
+
+  describe "name" do
+    test "auto-generates name when not provided" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60")
+
+      name = Overmind.Mission.Store.lookup_name(id)
+      assert name != nil
+      assert Regex.match?(~r/^[a-z]+-[a-z]+$/, name)
+    end
+
+    test "uses provided name" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60", name: "my-agent")
+
+      assert Overmind.Mission.Store.lookup_name(id) == "my-agent"
+    end
+  end
+
+  describe "cwd" do
+    test "pwd with cwd /tmp shows tmp in logs" do
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "pwd", cwd: "/tmp")
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+
+      {:ok, logs} = Mission.get_logs(id)
+      assert logs =~ "tmp"
+    end
+
+    test "stores cwd in ETS when provided" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60", cwd: "/tmp")
+
+      assert Overmind.Mission.Store.lookup_cwd(id) == "/tmp"
+    end
+
+    test "does not store cwd when nil" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60")
+
+      assert Overmind.Mission.Store.lookup_cwd(id) == nil
+    end
+  end
+
+  describe "session_id capture" do
+    test "captures session_id from system init event" do
+      script = ~s(sh -c 'echo "{\\"type\\":\\"system\\",\\"subtype\\":\\"init\\",\\"session_id\\":\\"sess-xyz\\"}"; sleep 60')
+
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: script, provider: Overmind.Provider.TestClaude)
+      Process.sleep(200)
+
+      assert Overmind.Mission.Store.lookup_session_id(id) == "sess-xyz"
+    end
+  end
+
+  describe "send_message/2" do
+    test "sends message to session and appears in logs" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "", type: :session)
+      Process.sleep(50)
+
+      assert :ok = Mission.send_message(id, "ping")
+      Process.sleep(100)
+
+      {:ok, logs} = Mission.get_logs(id)
+      assert logs =~ "[human] ping"
+      assert logs =~ "ping\n"
+    end
+
+    test "error for not_found" do
+      assert {:error, :not_found} = Mission.send_message("nonexist", "hello")
+    end
+
+    test "error for not_running (exited mission)" do
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "true")
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+
+      assert {:error, :not_running} = Mission.send_message(id, "hello")
+    end
+
+    test "error for task mission" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60", type: :task)
+      Process.sleep(50)
+
+      assert {:error, :not_session} = Mission.send_message(id, "hello")
+    end
+  end
+
+  describe "pause/unpause" do
+    test "pause returns session_id and blocks send" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "", type: :session)
+      Process.sleep(50)
+
+      assert {:ok, nil} = Mission.pause(id)
+      assert {:error, :paused} = Mission.send_message(id, "nope")
+    end
+
+    test "unpause re-enables send" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "", type: :session)
+      Process.sleep(50)
+
+      assert {:ok, nil} = Mission.pause(id)
+      assert :ok = Mission.unpause(id)
+      assert :ok = Mission.send_message(id, "hello")
+    end
+
+    test "pause on task mission errors" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60", type: :task)
+      Process.sleep(50)
+
+      assert {:error, :not_session} = Mission.pause(id)
+    end
+
+    test "pause on not found errors" do
+      assert {:error, :not_found} = Mission.pause("nonexist")
+    end
+
+    test "attached flag in store" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "", type: :session)
+      Process.sleep(50)
+
+      {:ok, _} = Mission.pause(id)
+      assert Overmind.Mission.Store.lookup_attached(id) == true
+
+      :ok = Mission.unpause(id)
+      assert Overmind.Mission.Store.lookup_attached(id) == false
     end
   end
 

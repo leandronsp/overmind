@@ -11,51 +11,59 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 ## Project Structure
 
 ```
+├── bin/
+│   └── overmind               # Shell script CLI (user-facing, nc -U unix socket)
 ├── lib/
-│   ├── overmind.ex              # Public API (run, ps, logs, stop, kill)
+│   ├── overmind.ex              # Public API (run, ps, logs, stop, kill, format_ps)
 │   └── overmind/
 │       ├── application.ex       # OTP Application (ETS + DynamicSupervisor)
-│       ├── cli.ex               # Escript entry point, RPC to daemon
-│       ├── daemon.ex            # Daemon lifecycle (start/shutdown/rpc)
+│       ├── entrypoint.ex        # Escript entry point (daemon bootstrap only)
+│       ├── daemon.ex            # Daemon runner (starts APIServer, sleeps forever)
 │       ├── mission.ex           # GenServer per spawned process (Port)
 │       ├── mission/
-│       │   └── store.ex         # ETS operations for mission state
+│       │   ├── store.ex         # ETS operations for mission state
+│       │   └── name.ex          # Agent name generator (adjective-noun)
 │       ├── provider.ex          # Provider behaviour (build_command, parse_line, format_for_logs)
-│       └── provider/
-│           ├── raw.ex           # Raw shell commands (wraps with sh -c)
-│           └── claude.ex        # Claude CLI (stream-json parsing)
+│       ├── provider/
+│       │   ├── raw.ex           # Raw shell commands (wraps with sh -c)
+│       │   └── claude.ex        # Claude CLI (stream-json parsing)
+│       └── api_server.ex        # Unix socket API server (JSON line protocol)
 ├── test/
 │   ├── test_helper.exs
 │   ├── overmind_test.exs
 │   ├── overmind/
-│   │   ├── cli_test.exs
+│   │   ├── api_server_test.exs
 │   │   ├── mission_test.exs
 │   │   ├── mission/
-│   │   │   └── store_test.exs
+│   │   │   ├── store_test.exs
+│   │   │   └── name_test.exs
 │   │   └── provider/
 │   │       ├── raw_test.exs
 │   │       └── claude_test.exs
 │   └── support/                 # Test helpers (TestClaude provider, MissionHelper)
-├── test_e2e.sh                  # E2E test script (daemon + raw + claude)
+├── test_e2e.sh                  # E2E test script (daemon + raw + claude + session)
 ├── mix.exs
 └── CLAUDE.md
 ```
 
 ## Architecture
 
-- **Daemon mode**: CLI sends commands via Erlang distributed RPC to a long-running daemon process
+- **Shell CLI** (`bin/overmind`): POSIX shell script, sends JSON over Unix domain socket via `nc -U`
+- **APIServer** (`Overmind.APIServer`): GenServer listening on `~/.overmind/overmind.sock`, dispatches JSON commands to `Overmind.*`
+- **Daemon** (`Overmind.Daemon`): Starts APIServer and sleeps forever (shell script handles lifecycle)
 - **Missions**: Each spawned command is a GenServer under DynamicSupervisor, managing a Port
 - **Providers**: Pluggable command builders/parsers — Raw wraps with `sh -c`, Claude parses stream-json
-- **ETS**: Mission state (status, logs, raw_events) persists after GenServer exits
+- **ETS**: Mission state (status, logs, raw_events, name, cwd) persists after GenServer exits
+- **Name Resolution**: `Store.resolve_id/1` — all public APIs accept id or agent name
 
 ## Build & Run
 
 ```bash
-mix build            # compile escript binary (alias for mix escript.build)
-./overmind start     # start the daemon
-./overmind shutdown  # stop the daemon
-mix test             # run unit tests (auto-rebuilds escript first)
-mix e2e              # run E2E tests (builds, starts daemon, tests all commands)
+mix build                # compile escript binary (overmind_daemon)
+./bin/overmind start     # start the daemon
+./bin/overmind shutdown  # stop the daemon
+mix test                 # run unit tests (auto-rebuilds escript first)
+mix e2e                  # run E2E tests (builds, starts daemon, tests all commands)
 ```
 
 `mix test` always rebuilds the escript before running tests — no stale binary risk.
@@ -139,6 +147,7 @@ Typespecs serve as deterministic constraints on LLM-generated code — the type 
 ## Roadmap
 
 - **M0** — Spawn & Observe (done): `run`, `ps`, `logs`, `stop`, `kill`, daemon mode, providers (raw + claude)
+- **M0.5** — CWD + Names (done): `--cwd`, `--name`, auto-generated names, name resolution in all commands, refactored Socket→APIServer, CLI→Entrypoint, gutted Daemon
 - **M1** — Session Agents: `--type session`, long-running multi-turn agents, `send`, `attach` (hybrid PTY), bidirectional stream-json
 - **M2** — Self-Healing: restart policies, exponential backoff, stall detection, session recovery via `--session-id`
 - **M2.5** — Agent Orchestration: orchestrator pattern, optional hierarchy (`--parent`), `ps --tree`, `kill --cascade`
