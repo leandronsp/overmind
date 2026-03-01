@@ -53,15 +53,17 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 - **Daemon** (`Overmind.Daemon`): Starts APIServer and sleeps forever (shell script handles lifecycle)
 - **Missions**: Each spawned command is a GenServer under DynamicSupervisor, managing a Port
 - **Providers**: Pluggable command builders/parsers — Raw wraps with `sh -c`, Claude parses stream-json
-- **ETS**: Mission state (status, logs, raw_events, name, cwd) persists after GenServer exits
+- **ETS**: Mission state (status, logs, raw_events, name, cwd, restart_policy, restart_count, last_activity) persists after GenServer exits
+- **Self-Healing**: Restart policies (`:never`, `:on_failure`, `:always`), exponential backoff, stall detection via activity timeout
 - **Name Resolution**: `Store.resolve_id/1` — all public APIs accept id or agent name
 
 ## Build & Run
 
 ```bash
 mix build                # compile escript binary (overmind_daemon)
-./bin/overmind start     # start the daemon
-./bin/overmind shutdown  # stop the daemon
+sudo ln -sf "$(pwd)/bin/overmind" /usr/local/bin/overmind
+overmind start           # start the daemon
+overmind shutdown        # stop the daemon
 mix test                 # run unit tests (auto-rebuilds escript first)
 mix e2e                  # run E2E tests (builds, starts daemon, tests all commands)
 ```
@@ -148,9 +150,9 @@ Typespecs serve as deterministic constraints on LLM-generated code — the type 
 
 - **M0** — Spawn & Observe (done): `run`, `ps`, `logs`, `stop`, `kill`, daemon mode, providers (raw + claude)
 - **M0.5** — CWD + Names (done): `--cwd`, `--name`, auto-generated names, name resolution in all commands, refactored Socket→APIServer, CLI→Entrypoint, gutted Daemon
-- **M1** — Session Agents: `--type session`, long-running multi-turn agents, `send`, `attach` (hybrid PTY), bidirectional stream-json
-- **M2** — Self-Healing: restart policies, exponential backoff, stall detection, session recovery via `--session-id`
-- **M2.5** — Agent Orchestration: orchestrator pattern, optional hierarchy (`--parent`), `ps --tree`, `kill --cascade`
+- **M1** — Session Agents (done): `--type session`, long-running multi-turn agents, `send`, `attach` (hybrid PTY), bidirectional stream-json
+- **M2** — Self-Healing (done): restart policies (`--restart on-failure|always`), exponential backoff (`--backoff`), stall detection (`--activity-timeout`), `--max-restarts`, session resume via `--resume`, `info` command (os_pid)
+- **M2.5** — Orchestration Loop: supervised Ralph Loop — `overmind wait`, `--parent`, `ps --tree`, `kill --cascade`. Session agent as orchestrator (decompose → spawn → wait → validate → record → next)
 - **M3** — Declarative Config: Blueprint TOML
 - **M4** — Full Isolation: worktree + port allocation + Docker
 - **M5** — Shared Akasha: distributed memory

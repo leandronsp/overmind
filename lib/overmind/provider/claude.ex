@@ -8,10 +8,14 @@ defmodule Overmind.Provider.Claude do
     "claude -p '#{escaped}' --output-format stream-json --verbose"
   end
 
-  @spec build_session_command() :: String.t()
-  def build_session_command do
-    "claude -p --input-format stream-json --output-format stream-json --verbose"
+  @spec build_session_command(keyword()) :: String.t()
+  def build_session_command(opts \\ []) do
+    base = "claude -p --input-format stream-json --output-format stream-json --verbose"
+    maybe_resume(base, Keyword.get(opts, :session_id))
   end
+
+  defp maybe_resume(cmd, nil), do: cmd
+  defp maybe_resume(cmd, session_id), do: cmd <> " --resume #{session_id}"
 
   @spec build_input_message(String.t()) :: String.t()
   def build_input_message(msg) do

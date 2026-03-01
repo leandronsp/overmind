@@ -55,6 +55,23 @@ defmodule Overmind.APIServerTest do
       assert logs =~ "tmp"
     end
 
+    test "run with restart args" do
+      result =
+        APIServer.dispatch(%{
+          "cmd" => "run",
+          "args" => %{
+            "command" => "sleep 60",
+            "restart" => "on-failure",
+            "max_restarts" => 3,
+            "backoff" => 2000,
+            "activity_timeout" => 30
+          }
+        })
+
+      assert %{"ok" => id} = result
+      assert Overmind.Mission.Store.lookup_restart_policy(id) == :on_failure
+    end
+
     test "run with empty command returns error" do
       result = APIServer.dispatch(%{"cmd" => "run", "args" => %{"command" => ""}})
       assert %{"error" => "empty_command"} = result
@@ -68,6 +85,22 @@ defmodule Overmind.APIServerTest do
       assert %{"ok" => text} = result
       assert text =~ "ID"
       assert text =~ "sleep 60"
+    end
+
+    test "info returns mission info with os_pid" do
+      {:ok, id} = Overmind.run("sleep 60")
+      Process.sleep(50)
+
+      result = APIServer.dispatch(%{"cmd" => "info", "args" => %{"id" => id}})
+      assert %{"ok" => info} = result
+      assert info.id == id
+      assert info.status == :running
+      assert is_integer(info.os_pid)
+    end
+
+    test "info returns error for unknown id" do
+      result = APIServer.dispatch(%{"cmd" => "info", "args" => %{"id" => "nonexist"}})
+      assert %{"error" => "not_found"} = result
     end
 
     test "logs returns mission logs" do
@@ -118,12 +151,12 @@ defmodule Overmind.APIServerTest do
       assert %{"error" => "not_session"} = result
     end
 
-    test "pause returns session_id (nil when no session)" do
-      {:ok, id} = Overmind.run("", type: :session)
+    test "pause returns session_id and cwd" do
+      {:ok, id} = Overmind.run("", type: :session, cwd: "/tmp")
       Process.sleep(50)
 
       result = APIServer.dispatch(%{"cmd" => "pause", "args" => %{"id" => id}})
-      assert %{"ok" => nil} = result
+      assert %{"ok" => %{"session_id" => nil, "cwd" => "/tmp"}} = result
     end
 
     test "unpause returns ok" do

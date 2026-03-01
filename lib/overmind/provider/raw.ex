@@ -8,8 +8,8 @@ defmodule Overmind.Provider.Raw do
     "sh -c '#{escaped}'"
   end
 
-  @spec build_session_command() :: String.t()
-  def build_session_command, do: "cat"
+  @spec build_session_command(keyword()) :: String.t()
+  def build_session_command(_opts \\ []), do: "cat"
 
   @spec build_input_message(String.t()) :: String.t()
   def build_input_message(msg), do: msg <> "\n"

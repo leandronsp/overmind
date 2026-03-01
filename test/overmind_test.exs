@@ -80,6 +80,21 @@ defmodule OvermindTest do
     end
   end
 
+  describe "run/2 with restart opts" do
+    test "accepts restart_policy option" do
+      {:ok, id} = Overmind.run("sleep 60", restart_policy: :on_failure)
+      assert Overmind.Mission.Store.lookup_restart_policy(id) == :on_failure
+    end
+
+    test "rejects invalid restart_policy" do
+      assert {:error, :invalid_restart_policy} = Overmind.run("sleep 60", restart_policy: :bogus)
+    end
+
+    test "accepts activity_timeout option" do
+      {:ok, _id} = Overmind.run("sleep 60", activity_timeout: 30)
+    end
+  end
+
   describe "run/2 with cwd" do
     test "cwd option runs command in specified directory" do
       {:ok, id} = Overmind.run("pwd", cwd: "/tmp")
@@ -97,7 +112,7 @@ defmodule OvermindTest do
       assert Overmind.ps() == []
     end
 
-    test "returns mission info with uptime and type" do
+    test "returns mission info with uptime, type, restart_count" do
       {:ok, id} = Overmind.run("sleep 60")
       Process.sleep(10)
 
@@ -108,6 +123,7 @@ defmodule OvermindTest do
       assert mission.type == :task
       assert is_integer(mission.uptime)
       assert mission.uptime >= 0
+      assert mission.restart_count == 0
     end
 
     test "includes name in mission info" do
@@ -138,6 +154,49 @@ defmodule OvermindTest do
       missions = Overmind.ps()
       assert Enum.all?(missions, fn m -> is_binary(m.id) end)
       assert Enum.any?(missions, fn m -> m.id == id end)
+    end
+  end
+
+  describe "info/1" do
+    test "returns full info for running mission" do
+      {:ok, id} = Overmind.run("sleep 60", name: "info-full", cwd: "/tmp",
+        restart_policy: :on_failure, activity_timeout: 30)
+      Process.sleep(50)
+
+      {:ok, info} = Overmind.info(id)
+      assert info.id == id
+      assert info.name == "info-full"
+      assert info.status == :running
+      assert is_integer(info.os_pid)
+      assert info.os_pid > 0
+      assert info.type == :task
+      assert info.cwd == "/tmp"
+      assert info.restart_policy == :on_failure
+      assert info.restart_count == 0
+    end
+
+    test "returns nil os_pid for exited mission" do
+      {:ok, id} = Overmind.run("true")
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+
+      {:ok, info} = Overmind.info(id)
+      assert info.status == :stopped
+      assert info.os_pid == nil
+    end
+
+    test "resolves by name" do
+      {:ok, _id} = Overmind.run("sleep 60", name: "info-test")
+      Process.sleep(50)
+
+      {:ok, info} = Overmind.info("info-test")
+      assert info.status == :running
+      assert is_integer(info.os_pid)
+    end
+
+    test "error for unknown mission" do
+      assert {:error, :not_found} = Overmind.info("nonexist")
     end
   end
 
@@ -307,13 +366,14 @@ defmodule OvermindTest do
       assert output =~ "NAME"
       assert output =~ "TYPE"
       assert output =~ "STATUS"
+      assert output =~ "RESTARTS"
       assert output =~ "UPTIME"
       assert output =~ "COMMAND"
     end
 
     test "formats missions with columns" do
       missions = [
-        %{id: "abc12345", name: "bold-arc", type: :task, status: :running, uptime: 30, command: "sleep 60"}
+        %{id: "abc12345", name: "bold-arc", type: :task, status: :running, restart_count: 0, uptime: 30, command: "sleep 60"}
       ]
 
       output = Overmind.format_ps(missions)
@@ -325,13 +385,23 @@ defmodule OvermindTest do
       assert output =~ "sleep 60"
     end
 
+    test "formats missions with restarts" do
+      missions = [
+        %{id: "abc12345", name: "bold-arc", type: :task, status: :restarting, restart_count: 3, uptime: 30, command: "false"}
+      ]
+
+      output = Overmind.format_ps(missions)
+      assert output =~ "restarting"
+      assert output =~ "3"
+    end
+
     test "formats uptime in minutes" do
-      missions = [%{id: "a1b2c3d4", name: "calm-beam", type: :task, status: :running, uptime: 120, command: "x"}]
+      missions = [%{id: "a1b2c3d4", name: "calm-beam", type: :task, status: :running, restart_count: 0, uptime: 120, command: "x"}]
       assert Overmind.format_ps(missions) =~ "2m"
     end
 
     test "formats uptime in hours" do
-      missions = [%{id: "a1b2c3d4", name: "dark-core", type: :task, status: :stopped, uptime: 7200, command: "x"}]
+      missions = [%{id: "a1b2c3d4", name: "dark-core", type: :task, status: :stopped, restart_count: 0, uptime: 7200, command: "x"}]
       assert Overmind.format_ps(missions) =~ "2h"
     end
   end

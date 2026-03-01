@@ -341,6 +341,339 @@ defmodule Overmind.MissionTest do
     end
   end
 
+  describe "restart opts" do
+    test "stores restart_policy in ETS" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60", restart_policy: :on_failure)
+
+      assert Overmind.Mission.Store.lookup_restart_policy(id) == :on_failure
+    end
+
+    test "defaults restart_policy to :never" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60")
+
+      assert Overmind.Mission.Store.lookup_restart_policy(id) == :never
+    end
+
+    test ":never policy — crash still stops GenServer" do
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "false", restart_policy: :never)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+
+      [{^id, _, _, :crashed, _}] = :ets.lookup(:overmind_missions, id)
+    end
+  end
+
+  describe "restart: :on_failure" do
+    test "restarts on non-zero exit" do
+      id = Mission.generate_id()
+
+      {:ok, pid} =
+        Mission.start_link(
+          id: id,
+          command: "sh -c 'echo attempt; exit 1'",
+          restart_policy: :on_failure,
+          max_restarts: 1,
+          backoff_ms: 50
+        )
+
+      # Wait for first exit + restart + second exit + GenServer stops (max reached)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 3000
+
+      {:ok, logs} = Mission.get_logs(id)
+      assert logs =~ "--- restart #1"
+      # Logs persist across restarts — "attempt" appears at least twice
+      assert length(String.split(logs, "attempt")) >= 3
+    end
+
+    test "does NOT restart on exit 0" do
+      id = Mission.generate_id()
+
+      {:ok, pid} =
+        Mission.start_link(
+          id: id,
+          command: "true",
+          restart_policy: :on_failure,
+          max_restarts: 3,
+          backoff_ms: 50
+        )
+
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+
+      [{^id, _, _, :stopped, _}] = :ets.lookup(:overmind_missions, id)
+      assert Overmind.Mission.Store.lookup_restart_count(id) == 0
+    end
+  end
+
+  describe "restart: :always" do
+    test "restarts even on exit 0" do
+      id = Mission.generate_id()
+
+      {:ok, pid} =
+        Mission.start_link(
+          id: id,
+          command: "true",
+          restart_policy: :always,
+          max_restarts: 1,
+          backoff_ms: 50
+        )
+
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 3000
+
+      {:ok, logs} = Mission.get_logs(id)
+      assert logs =~ "--- restart #1"
+    end
+  end
+
+  describe "restart: explicit stop prevents restart" do
+    test "stop during running prevents restart" do
+      id = Mission.generate_id()
+
+      {:ok, pid} =
+        Mission.start_link(
+          id: id,
+          command: "sleep 60",
+          restart_policy: :always,
+          max_restarts: 3,
+          backoff_ms: 50
+        )
+
+      Process.sleep(50)
+      ref = Process.monitor(pid)
+      :ok = Mission.stop(id)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
+
+      [{^id, _, _, :stopped, _}] = :ets.lookup(:overmind_missions, id)
+    end
+  end
+
+  describe "restart: max_restarts cap" do
+    test "stops after reaching max_restarts" do
+      id = Mission.generate_id()
+
+      {:ok, pid} =
+        Mission.start_link(
+          id: id,
+          command: "false",
+          restart_policy: :on_failure,
+          max_restarts: 2,
+          backoff_ms: 50
+        )
+
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 5000
+
+      [{^id, _, _, :crashed, _}] = :ets.lookup(:overmind_missions, id)
+      assert Overmind.Mission.Store.lookup_restart_count(id) == 2
+    end
+
+    test "max_restarts 0 means unlimited" do
+      # Use a command that exits after 3 runs via a temp file counter
+      tmpfile = Path.join(System.tmp_dir!(), "overmind_test_#{:rand.uniform(1_000_000)}")
+      File.write!(tmpfile, "0")
+
+      cmd = "sh -c 'n=$(cat #{tmpfile}); n=$((n+1)); echo $n > #{tmpfile}; if [ $n -ge 4 ]; then exit 0; else exit 1; fi'"
+
+      id = Mission.generate_id()
+
+      {:ok, pid} =
+        Mission.start_link(
+          id: id,
+          command: cmd,
+          restart_policy: :on_failure,
+          max_restarts: 0,
+          backoff_ms: 50
+        )
+
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 5000
+
+      # Eventually exits cleanly (exit 0 on 4th run)
+      [{^id, _, _, :stopped, _}] = :ets.lookup(:overmind_missions, id)
+      # Restarted 3 times (runs 1-3 failed, run 4 succeeded)
+      assert Overmind.Mission.Store.lookup_restart_count(id) == 3
+
+      File.rm(tmpfile)
+    end
+  end
+
+  describe "restart: exponential backoff" do
+    test "restart delay increases exponentially" do
+      id = Mission.generate_id()
+
+      {:ok, pid} =
+        Mission.start_link(
+          id: id,
+          command: "false",
+          restart_policy: :on_failure,
+          max_restarts: 2,
+          backoff_ms: 100
+        )
+
+      # First restart at ~100ms, second at ~200ms
+      # Total time should be > 250ms (not just 200ms = 2 * 100ms flat)
+      t0 = System.monotonic_time(:millisecond)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 5000
+      elapsed = System.monotonic_time(:millisecond) - t0
+
+      # With exponential: 100 + 200 = 300ms minimum
+      assert elapsed >= 250
+    end
+  end
+
+  describe "restart: log markers" do
+    test "restart marker includes count and timestamp" do
+      id = Mission.generate_id()
+
+      {:ok, pid} =
+        Mission.start_link(
+          id: id,
+          command: "false",
+          restart_policy: :on_failure,
+          max_restarts: 1,
+          backoff_ms: 50
+        )
+
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 3000
+
+      {:ok, logs} = Mission.get_logs(id)
+      assert logs =~ ~r/--- restart #1 at \d{4}-\d{2}-\d{2}/
+    end
+  end
+
+  describe "stop during :restarting" do
+    test "cancels pending restart and stops GenServer" do
+      id = Mission.generate_id()
+
+      {:ok, pid} =
+        Mission.start_link(
+          id: id,
+          command: "false",
+          restart_policy: :on_failure,
+          max_restarts: 5,
+          backoff_ms: 5000
+        )
+
+      # Wait for the process to enter :restarting
+      Process.sleep(200)
+      assert {:restarting, ^pid, _, _} = Overmind.Mission.Store.lookup(id)
+
+      ref = Process.monitor(pid)
+      assert :ok = Mission.stop(id)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
+
+      [{^id, _, _, :stopped, _}] = :ets.lookup(:overmind_missions, id)
+    end
+  end
+
+  describe "kill during :restarting" do
+    test "cancels pending restart and cleans up" do
+      id = Mission.generate_id()
+
+      {:ok, pid} =
+        Mission.start_link(
+          id: id,
+          command: "false",
+          restart_policy: :on_failure,
+          max_restarts: 5,
+          backoff_ms: 5000
+        )
+
+      # Wait for the process to enter :restarting
+      Process.sleep(200)
+      assert {:restarting, ^pid, _, _} = Overmind.Mission.Store.lookup(id)
+
+      ref = Process.monitor(pid)
+      assert :ok = Mission.kill(id)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
+
+      assert :ets.lookup(:overmind_missions, id) == []
+    end
+  end
+
+  describe "activity tracking" do
+    test "updates last_activity_at on port data" do
+      id = Mission.generate_id()
+
+      {:ok, _pid} =
+        Mission.start_link(
+          id: id,
+          command: "sh -c 'echo hello; sleep 60'",
+          activity_timeout: 60
+        )
+
+      Process.sleep(200)
+      assert Overmind.Mission.Store.lookup_last_activity(id) != nil
+    end
+  end
+
+  describe "stall detection" do
+    test "kills process after no activity" do
+      id = Mission.generate_id()
+
+      {:ok, pid} =
+        Mission.start_link(
+          id: id,
+          command: "sleep 60",
+          activity_timeout: 1
+        )
+
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 3000
+
+      {:ok, logs} = Mission.get_logs(id)
+      assert logs =~ "killed: no activity for"
+    end
+
+    test "stall kill follows restart policy" do
+      id = Mission.generate_id()
+
+      {:ok, pid} =
+        Mission.start_link(
+          id: id,
+          command: "sleep 60",
+          activity_timeout: 1,
+          restart_policy: :on_failure,
+          max_restarts: 1,
+          backoff_ms: 50
+        )
+
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 5000
+
+      {:ok, logs} = Mission.get_logs(id)
+      assert logs =~ "killed: no activity for"
+      assert logs =~ "--- restart #1"
+    end
+
+    test "continuous output prevents stall kill" do
+      id = Mission.generate_id()
+
+      {:ok, pid} =
+        Mission.start_link(
+          id: id,
+          command: "sh -c 'while true; do echo tick; sleep 0.3; done'",
+          activity_timeout: 1
+        )
+
+      # After 1.5s the process should still be alive (output resets timer)
+      Process.sleep(1500)
+      assert Process.alive?(pid)
+
+      # Cleanup
+      Mission.stop(id)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
+    end
+  end
+
   describe "exit detection" do
     test "exit 0 sets :stopped status in ETS" do
       id = Mission.generate_id()

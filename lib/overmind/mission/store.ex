@@ -5,6 +5,7 @@ defmodule Overmind.Mission.Store do
 
   @type lookup_result ::
           {:running, pid(), String.t(), integer()}
+          | {:restarting, pid(), String.t(), integer()}
           | {:exited, atom(), String.t(), integer()}
           | :not_found
 
@@ -13,6 +14,11 @@ defmodule Overmind.Mission.Store do
     case :ets.lookup(@table, id) do
       [{^id, pid, command, :running, started_at}] ->
         {:running, pid, command, started_at}
+
+      [{^id, pid, command, :restarting, started_at}] ->
+        if Process.alive?(pid),
+          do: {:restarting, pid, command, started_at},
+          else: {:exited, :restarting, command, started_at}
 
       [{^id, _pid, command, status, started_at}] ->
         {:exited, status, command, started_at}
@@ -144,6 +150,45 @@ defmodule Overmind.Mission.Store do
     end
   end
 
+  @spec insert_restart_policy(String.t(), atom()) :: true
+  def insert_restart_policy(id, policy) do
+    :ets.insert(@table, {{:restart_policy, id}, policy})
+  end
+
+  @spec lookup_restart_policy(String.t()) :: atom()
+  def lookup_restart_policy(id) do
+    case :ets.lookup(@table, {:restart_policy, id}) do
+      [{{:restart_policy, ^id}, policy}] -> policy
+      [] -> :never
+    end
+  end
+
+  @spec insert_restart_count(String.t(), non_neg_integer()) :: true
+  def insert_restart_count(id, count) do
+    :ets.insert(@table, {{:restart_count, id}, count})
+  end
+
+  @spec lookup_restart_count(String.t()) :: non_neg_integer()
+  def lookup_restart_count(id) do
+    case :ets.lookup(@table, {:restart_count, id}) do
+      [{{:restart_count, ^id}, count}] -> count
+      [] -> 0
+    end
+  end
+
+  @spec insert_last_activity(String.t(), integer()) :: true
+  def insert_last_activity(id, timestamp) do
+    :ets.insert(@table, {{:last_activity, id}, timestamp})
+  end
+
+  @spec lookup_last_activity(String.t()) :: integer() | nil
+  def lookup_last_activity(id) do
+    case :ets.lookup(@table, {:last_activity, id}) do
+      [{{:last_activity, ^id}, ts}] -> ts
+      [] -> nil
+    end
+  end
+
   @spec cleanup(String.t()) :: :ok
   def cleanup(id) do
     :ets.delete(@table, id)
@@ -154,6 +199,9 @@ defmodule Overmind.Mission.Store do
     :ets.delete(@table, {:attached, id})
     :ets.delete(@table, {:cwd, id})
     :ets.delete(@table, {:name, id})
+    :ets.delete(@table, {:restart_policy, id})
+    :ets.delete(@table, {:restart_count, id})
+    :ets.delete(@table, {:last_activity, id})
     :ok
   end
 
