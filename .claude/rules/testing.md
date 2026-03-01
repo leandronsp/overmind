@@ -18,15 +18,13 @@ mix smoke                             # daemon lifecycle (build, start, run, ps,
 
 ## E2E Testing
 
-**NEVER run `mix e2e`** — it spawns Claude CLI which cannot run inside a Claude session.
-
-Instead, run the smoke test after shell or integration changes:
-
 ```bash
-mix smoke
+mix e2e     # full E2E (daemon + raw + claude + session)
+mix smoke   # quick smoke test (build, start, run, ps, shutdown)
 ```
 
-This builds the escript, starts the daemon, runs a command, checks ps, and shuts down. Tell the user to run `mix e2e` themselves for full coverage.
+`mix e2e` spawns Claude CLI via Port — this works inside Claude Code sessions because
+Mission clears `CLAUDECODE`/`CLAUDE_CODE_ENTRYPOINT` env vars on child processes.
 
 ## TDD Cycle
 

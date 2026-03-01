@@ -117,7 +117,7 @@ defmodule Overmind.Mission do
     activity_timeout = Map.get(args, :activity_timeout, 0)
 
     port_command = build_port_command(type, provider, command)
-    port_opts = [:binary, :exit_status, :stderr_to_stdout] ++ maybe_cd(cwd)
+    port_opts = [:binary, :exit_status, :stderr_to_stdout] ++ clean_env() ++ maybe_cd(cwd)
     port = Port.open({:spawn, port_command}, port_opts)
     {:os_pid, os_pid} = Port.info(port, :os_pid)
     now = System.system_time(:second)
@@ -311,7 +311,7 @@ defmodule Overmind.Mission do
     now_mono = System.monotonic_time(:millisecond)
 
     port_command = build_port_command(state.type, state.provider, state.command, state.session_id)
-    port_opts = [:binary, :exit_status, :stderr_to_stdout] ++ maybe_cd(state.cwd)
+    port_opts = [:binary, :exit_status, :stderr_to_stdout] ++ clean_env() ++ maybe_cd(state.cwd)
     port = Port.open({:spawn, port_command}, port_opts)
     {:os_pid, os_pid} = Port.info(port, :os_pid)
 
@@ -374,6 +374,13 @@ defmodule Overmind.Mission do
 
   defp maybe_cd(nil), do: []
   defp maybe_cd(cwd), do: [{:cd, String.to_charlist(cwd)}]
+
+  # Allow spawning Claude CLI as a subprocess inside a Claude Code session.
+  # These env vars trigger nesting detection — unsetting them lets the child
+  # process run as a standalone instance.
+  defp clean_env do
+    [{:env, [{~c"CLAUDECODE", false}, {~c"CLAUDE_CODE_ENTRYPOINT", false}]}]
+  end
 
   defp maybe_store_cwd(_id, nil), do: :ok
   defp maybe_store_cwd(id, cwd), do: Store.insert_cwd(id, cwd)
