@@ -41,6 +41,23 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │   │       ├── raw_test.exs
 │   │       └── claude_test.exs
 │   └── support/                 # Test helpers (TestClaude provider, MissionHelper)
+├── .claude/
+│   ├── agents/
+│   │   ├── scout.md             # Read-only codebase explorer
+│   │   ├── code-reviewer.md     # Staff Engineer reviewer (Elixir + Shell)
+│   │   └── plan-reviewer.md     # Implementation plan stress-tester
+│   ├── rules/
+│   │   ├── git.md               # Git conventions (commits, branches, staging)
+│   │   ├── testing.md           # ExUnit/TDD conventions
+│   │   └── elixir.md            # Elixir/OTP patterns and anti-patterns
+│   └── skills/
+│       ├── commit/SKILL.md      # Git commit (quick + detailed modes)
+│       ├── dev/SKILL.md         # TDD implementer with agent orchestration
+│       ├── review/SKILL.md      # Code review (Elixir + Shell + tech debt)
+│       ├── debug/SKILL.md       # Elixir debugging workflow
+│       ├── learn/SKILL.md       # Session learning extractor
+│       ├── po/SKILL.md          # Product Owner (GitHub issue writer)
+│       └── pr/SKILL.md          # Pull request creator
 ├── test_e2e.sh                  # E2E test script (daemon + raw + claude + session)
 ├── mix.exs
 └── CLAUDE.md
@@ -127,6 +144,35 @@ Typespecs serve as deterministic constraints on LLM-generated code — the type 
 - Inline `if x, do: a, else: b` for nil checks — use `maybe_x(nil)` / `maybe_x(val)` pattern
 - God modules (>200 lines) — extract submodules (e.g., Mission.Store)
 - Duplicated code across files — extract to shared helper in `test/support/` or `lib/`
+
+## Shell Style
+
+### Principles
+- POSIX `sh` — no bashisms (`[[ ]]`, `local`, arrays, `declare`)
+- Every variable quoted: `"$var"`, `"$(cmd)"`
+- `printf` for data output, `echo` only for user messages
+- Small, focused functions — one responsibility each
+- Descriptive names: `cmd_run`, `send_cmd`, `extract_ok`
+
+### Structure
+- Scripts <150 lines — split into sourced files under `bin/lib/`
+- Helpers section at top (escape_json, send_cmd, extract_ok)
+- Commands section below (cmd_start, cmd_run, cmd_ps, ...)
+- Dispatch at bottom
+
+### Safety
+- `set -e` at top for fail-fast
+- `trap cleanup EXIT` for temp files, sockets, child processes
+- Never use `exec` in functions with traps (replaces shell, trap is lost)
+- Explicit error handling: `cmd || { echo "error" >&2; return 1; }`
+
+### Anti-patterns — DO NOT
+- Unquoted variables — always `"$var"`
+- `echo` for data output — use `printf '%s'`
+- Monolithic scripts >150 lines — split into sourced helpers
+- `exec` inside trapped functions — trap is lost
+- Inline JSON construction — use helper functions
+- Duplicated logic across shell functions — extract helpers
 
 ## TDD
 
