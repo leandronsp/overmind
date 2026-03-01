@@ -8,7 +8,7 @@ defmodule Overmind.MixProject do
       elixir: "~> 1.19.5",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      escript: [main_module: Overmind.CLI],
+      escript: [main_module: Overmind.Entrypoint, name: "overmind_daemon"],
       elixirc_paths: elixirc_paths(Mix.env()),
       aliases: aliases()
     ]

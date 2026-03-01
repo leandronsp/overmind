@@ -8,6 +8,19 @@ defmodule Overmind.Provider.Claude do
     "claude -p '#{escaped}' --output-format stream-json --verbose"
   end
 
+  @spec build_session_command() :: String.t()
+  def build_session_command do
+    "claude -p --input-format stream-json --output-format stream-json --verbose"
+  end
+
+  @spec build_input_message(String.t()) :: String.t()
+  def build_input_message(msg) do
+    JSON.encode!(%{
+      "type" => "user",
+      "message" => %{"role" => "user", "content" => msg}
+    }) <> "\n"
+  end
+
   @spec parse_line(String.t()) :: {Overmind.Provider.event(), map() | nil}
   def parse_line(line) do
     case JSON.decode(line) do

@@ -96,6 +96,109 @@ defmodule Overmind.Mission.StoreTest do
     end
   end
 
+  describe "insert_type/2 and lookup_type/1" do
+    test "stores and retrieves mission type" do
+      Store.insert_type("m1", :session)
+      assert Store.lookup_type("m1") == :session
+    end
+
+    test "returns :task as default for unknown id" do
+      assert Store.lookup_type("nope") == :task
+    end
+  end
+
+  describe "insert_session_id/2 and lookup_session_id/1" do
+    test "stores and retrieves session_id" do
+      Store.insert_session_id("m1", "sess-abc")
+      assert Store.lookup_session_id("m1") == "sess-abc"
+    end
+
+    test "returns nil for unknown id" do
+      assert Store.lookup_session_id("nope") == nil
+    end
+  end
+
+  describe "insert_attached/2 and lookup_attached/1" do
+    test "stores and retrieves attached flag" do
+      Store.insert_attached("m1", true)
+      assert Store.lookup_attached("m1") == true
+    end
+
+    test "returns false for unknown id" do
+      assert Store.lookup_attached("nope") == false
+    end
+  end
+
+  describe "insert_name/2 and lookup_name/1" do
+    test "stores and retrieves name" do
+      Store.insert_name("m1", "bold-arc")
+      assert Store.lookup_name("m1") == "bold-arc"
+    end
+
+    test "returns nil for unknown id" do
+      assert Store.lookup_name("nope") == nil
+    end
+  end
+
+  describe "find_by_name/1" do
+    test "finds id by name" do
+      Store.insert_name("m1", "bold-arc")
+      assert Store.find_by_name("bold-arc") == "m1"
+    end
+
+    test "returns nil for unknown name" do
+      assert Store.find_by_name("nonexist") == nil
+    end
+  end
+
+  describe "resolve_id/1" do
+    test "returns id when mission exists by id" do
+      Store.insert("m1", {self(), "cmd", :running, 100})
+      assert Store.resolve_id("m1") == "m1"
+    end
+
+    test "resolves name to id" do
+      Store.insert("m1", {self(), "cmd", :running, 100})
+      Store.insert_name("m1", "bold-arc")
+      assert Store.resolve_id("bold-arc") == "m1"
+    end
+
+    test "returns input when neither id nor name found" do
+      assert Store.resolve_id("unknown") == "unknown"
+    end
+  end
+
+  describe "insert_cwd/2 and lookup_cwd/1" do
+    test "stores and retrieves cwd" do
+      Store.insert_cwd("m1", "/tmp")
+      assert Store.lookup_cwd("m1") == "/tmp"
+    end
+
+    test "returns nil for unknown id" do
+      assert Store.lookup_cwd("nope") == nil
+    end
+  end
+
+  describe "cleanup/1 with all metadata" do
+    test "removes type, session_id, attached, cwd and name entries" do
+      Store.insert("m1", {self(), "cmd", :stopped, 100})
+      Store.insert_type("m1", :session)
+      Store.insert_session_id("m1", "sess-abc")
+      Store.insert_attached("m1", true)
+      Store.insert_cwd("m1", "/tmp")
+      Store.insert_name("m1", "bold-arc")
+      Store.persist_after_exit("m1", "logs", [])
+
+      Store.cleanup("m1")
+
+      assert Store.lookup_type("m1") == :task
+      assert Store.lookup_session_id("m1") == nil
+      assert Store.lookup_attached("m1") == false
+      assert Store.lookup_cwd("m1") == nil
+      assert Store.lookup_name("m1") == nil
+    end
+  end
+
   describe "list_all/0" do
     test "returns only mission tuples, not metadata" do
       pid = self()
