@@ -1,6 +1,6 @@
 ---
-name: tdd
-description: Implementer - fetches a GitHub issue, builds an implementation plan, then implements using TDD. Use when: implement, build this, code this, add this feature, TDD, test first, red green refactor, pick a task, next task.
+name: dev
+description: Implementer - fetches a GitHub issue, builds an implementation plan, then implements using TDD. Use when: implement, build this, code this, add this feature, TDD, test first, red green refactor, pick a task, next task, dev.
 ---
 
 # Implementer - TDD Engineer
@@ -18,13 +18,10 @@ description: Implementer - fetches a GitHub issue, builds an implementation plan
 ### Phase 1: Understand
 
 1. **Fetch the issue** using `gh issue view <number> --json title,body`
-2. **Research the codebase independently** — don't assume the PRD covers everything:
-   - Read `lib/overmind.ex` for module structure
-   - Explore all source files relevant to the issue (read them, don't skim)
-   - Understand existing modules, GenServers, patterns, and conventions in use
-   - Trace call paths and data flow through the affected areas
-   - Look for edge cases, constraints, or existing behavior the PRD may not mention
-   - Check tests for implicit contracts and expected behavior
+2. **Launch scout agent** for codebase exploration:
+   - Use the `scout` agent to explore all source files relevant to the issue
+   - Scout will trace call paths, map test coverage, find existing patterns
+   - Review the Scout Report for affected files, data flow, and gaps
 3. **Identify the gap** between current state and what the issue requires
 4. **Challenge the PRD** if research reveals:
    - Missing requirements or overlooked edge cases
@@ -55,12 +52,20 @@ This is not a formality. The implementer is expected to push back when research 
    - Identify files to create/modify
    - Identify new types, functions, modules, GenServers
    - Note dependencies between tasks
-9. **Present the plan** to the user for approval
+9. **Launch plan-reviewer agent** to stress-test the plan:
+   - Reviewer verifies claims against codebase (do files exist? are patterns real?)
+   - Finds gaps (missing error states, untested paths, OTP edge cases)
+   - Checks for over-engineering
+   - Suggests better patterns from existing code
+10. **Revise plan** based on reviewer feedback, then present to user for approval
 
 ### Phase 3: Implement (TDD)
 
-10. **Create a feature branch**: `feature/<short-name>`
-11. **For each task**, follow the RED-GREEN-REFACTOR cycle below
+11. **Create a feature branch**: `feature/<short-name>`
+12. **For each task**, follow the RED-GREEN-REFACTOR cycle below
+13. **After all tasks complete**, launch `code-reviewer` agent for self-review:
+    - Reviewer checks correctness, idioms, OTP safety, typespecs
+    - Address any Critical or Important findings before committing
 
 ## The Cycle
 
@@ -89,7 +94,8 @@ Run: `mix test`
 Write only enough production code to make the failing test pass. No more. No future-proofing.
 
 Follow all codebase conventions from `CLAUDE.md`:
-- Self-documenting function names, minimal comments
+- Self-documenting function names
+- Add comments on non-obvious logic during implementation, not as afterthought
 - Idiomatic Elixir — pattern matching, pipelines, supervision trees
 - No external deps unless strictly necessary
 - Typespecs: `@spec` on public client API, `@type t` on structs, skip GenServer callbacks. Consult `CLAUDE.md` Type Reference table for correct types (e.g. `String.t()` not `string()`, `GenServer.on_start()` for start_link returns, `port()` for Port refs)
@@ -134,6 +140,7 @@ For each task:
 - [ ] Repeat for next behavior increment
 - [ ] All task behaviors covered
 - [ ] `mix dialyzer` passes (type constraint check)
+- [ ] `mix smoke` passes (daemon lifecycle check)
 - [ ] Commit with `/commit`
 
 ## Pipeline

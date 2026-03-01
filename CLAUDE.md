@@ -12,7 +12,10 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 
 ```
 ├── bin/
-│   └── overmind               # Shell script CLI (user-facing, nc -U unix socket)
+│   ├── overmind               # Shell script CLI (dispatch + source)
+│   └── cli/
+│       ├── helpers.sh         # JSON helpers (escape, send_cmd, extract_ok, maybe_json_*)
+│       └── commands.sh        # All cmd_* functions (run, ps, logs, attach, etc.)
 ├── lib/
 │   ├── overmind.ex              # Public API (run, ps, logs, stop, kill, format_ps)
 │   └── overmind/
@@ -21,6 +24,7 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │       ├── daemon.ex            # Daemon runner (starts APIServer, sleeps forever)
 │       ├── mission.ex           # GenServer per spawned process (Port)
 │       ├── mission/
+│       │   ├── client.ex        # Client API (get_logs, stop, kill, pause, info, etc.)
 │       │   ├── store.ex         # ETS operations for mission state
 │       │   └── name.ex          # Agent name generator (adjective-noun)
 │       ├── provider.ex          # Provider behaviour (build_command, parse_line, format_for_logs)
@@ -41,7 +45,26 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │   │       ├── raw_test.exs
 │   │       └── claude_test.exs
 │   └── support/                 # Test helpers (TestClaude provider, MissionHelper)
+├── .claude/
+│   ├── agents/
+│   │   ├── scout.md             # Read-only codebase explorer
+│   │   ├── code-reviewer.md     # Staff Engineer reviewer (Elixir + Shell)
+│   │   └── plan-reviewer.md     # Implementation plan stress-tester
+│   ├── rules/
+│   │   ├── git.md               # Git conventions (commits, branches, staging)
+│   │   ├── testing.md           # ExUnit/TDD conventions
+│   │   ├── elixir.md            # Elixir/OTP patterns and anti-patterns
+│   │   └── shell.md             # POSIX shell conventions and anti-patterns
+│   └── skills/
+│       ├── commit/SKILL.md      # Git commit (quick + detailed modes)
+│       ├── dev/SKILL.md         # TDD implementer with agent orchestration
+│       ├── review/SKILL.md      # Code review (Elixir + Shell + tech debt)
+│       ├── debug/SKILL.md       # Elixir debugging workflow
+│       ├── learn/SKILL.md       # Session learning extractor
+│       ├── po/SKILL.md          # Product Owner (GitHub issue writer)
+│       └── pr/SKILL.md          # Pull request creator
 ├── test_e2e.sh                  # E2E test script (daemon + raw + claude + session)
+├── test_smoke.sh                # Smoke test (build, start, run, ps, shutdown)
 ├── mix.exs
 └── CLAUDE.md
 ```
@@ -51,18 +74,21 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 - **Shell CLI** (`bin/overmind`): POSIX shell script, sends JSON over Unix domain socket via `nc -U`
 - **APIServer** (`Overmind.APIServer`): GenServer listening on `~/.overmind/overmind.sock`, dispatches JSON commands to `Overmind.*`
 - **Daemon** (`Overmind.Daemon`): Starts APIServer and sleeps forever (shell script handles lifecycle)
-- **Missions**: Each spawned command is a GenServer under DynamicSupervisor, managing a Port
+- **Missions**: Each spawned command is a GenServer (`Mission`) under DynamicSupervisor, managing a Port. Client API in `Mission.Client`
 - **Providers**: Pluggable command builders/parsers — Raw wraps with `sh -c`, Claude parses stream-json
-- **ETS**: Mission state (status, logs, raw_events, name, cwd) persists after GenServer exits
+- **ETS**: Mission state (status, logs, raw_events, name, cwd, restart_policy, restart_count, last_activity) persists after GenServer exits
+- **Self-Healing**: Restart policies (`:never`, `:on_failure`, `:always`), exponential backoff, stall detection via activity timeout
 - **Name Resolution**: `Store.resolve_id/1` — all public APIs accept id or agent name
 
 ## Build & Run
 
 ```bash
 mix build                # compile escript binary (overmind_daemon)
-./bin/overmind start     # start the daemon
-./bin/overmind shutdown  # stop the daemon
+sudo ln -sf "$(pwd)/bin/overmind" /usr/local/bin/overmind
+overmind start           # start the daemon
+overmind shutdown        # stop the daemon
 mix test                 # run unit tests (auto-rebuilds escript first)
+mix smoke                # smoke test (build, start daemon, run, ps, shutdown)
 mix e2e                  # run E2E tests (builds, starts daemon, tests all commands)
 ```
 
@@ -70,9 +96,10 @@ mix e2e                  # run E2E tests (builds, starts daemon, tests all comma
 
 ## Code Standards
 
-- Self-documenting function names, minimal comments
+- Self-documenting function names; comment non-obvious logic (WHY, not WHAT)
 - `mix test` must pass before committing
 - `mix dialyzer` must pass before committing
+- `mix smoke` must pass before committing
 - No external deps unless strictly necessary
 
 ## Typespecs
@@ -126,6 +153,35 @@ Typespecs serve as deterministic constraints on LLM-generated code — the type 
 - God modules (>200 lines) — extract submodules (e.g., Mission.Store)
 - Duplicated code across files — extract to shared helper in `test/support/` or `lib/`
 
+## Shell Style
+
+### Principles
+- POSIX `sh` — no bashisms (`[[ ]]`, `local`, arrays, `declare`)
+- Every variable quoted: `"$var"`, `"$(cmd)"`
+- `printf` for data output, `echo` only for user messages
+- Small, focused functions — one responsibility each
+- Descriptive names: `cmd_run`, `send_cmd`, `extract_ok`
+
+### Structure
+- Scripts <150 lines — split into sourced files under `bin/lib/`
+- Helpers section at top (escape_json, send_cmd, extract_ok)
+- Commands section below (cmd_start, cmd_run, cmd_ps, ...)
+- Dispatch at bottom
+
+### Safety
+- `set -e` at top for fail-fast
+- `trap cleanup EXIT` for temp files, sockets, child processes
+- Never use `exec` in functions with traps (replaces shell, trap is lost)
+- Explicit error handling: `cmd || { echo "error" >&2; return 1; }`
+
+### Anti-patterns — DO NOT
+- Unquoted variables — always `"$var"`
+- `echo` for data output — use `printf '%s'`
+- Monolithic scripts >150 lines — split into sourced helpers
+- `exec` inside trapped functions — trap is lost
+- Inline JSON construction — use helper functions
+- Duplicated logic across shell functions — extract helpers
+
 ## TDD
 
 - Write tests BEFORE or alongside implementation, never after
@@ -148,9 +204,9 @@ Typespecs serve as deterministic constraints on LLM-generated code — the type 
 
 - **M0** — Spawn & Observe (done): `run`, `ps`, `logs`, `stop`, `kill`, daemon mode, providers (raw + claude)
 - **M0.5** — CWD + Names (done): `--cwd`, `--name`, auto-generated names, name resolution in all commands, refactored Socket→APIServer, CLI→Entrypoint, gutted Daemon
-- **M1** — Session Agents: `--type session`, long-running multi-turn agents, `send`, `attach` (hybrid PTY), bidirectional stream-json
-- **M2** — Self-Healing: restart policies, exponential backoff, stall detection, session recovery via `--session-id`
-- **M2.5** — Agent Orchestration: orchestrator pattern, optional hierarchy (`--parent`), `ps --tree`, `kill --cascade`
+- **M1** — Session Agents (done): `--type session`, long-running multi-turn agents, `send`, `attach` (hybrid PTY), bidirectional stream-json
+- **M2** — Self-Healing (done): restart policies (`--restart on-failure|always`), exponential backoff (`--backoff`), stall detection (`--activity-timeout`), `--max-restarts`, session resume via `--resume`, `info` command (os_pid)
+- **M2.5** — Orchestration Loop: supervised Ralph Loop — `overmind wait`, `--parent`, `ps --tree`, `kill --cascade`. Session agent as orchestrator (decompose → spawn → wait → validate → record → next)
 - **M3** — Declarative Config: Blueprint TOML
 - **M4** — Full Isolation: worktree + port allocation + Docker
 - **M5** — Shared Akasha: distributed memory

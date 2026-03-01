@@ -22,6 +22,11 @@ defmodule Overmind.APIServer do
       [type: type, provider: provider]
       |> maybe_add_cwd(cwd)
       |> maybe_add_name(name)
+      |> maybe_add_restart(Map.get(args, "restart"))
+      |> maybe_add_int(:max_restarts, Map.get(args, "max_restarts"))
+      |> maybe_add_int(:max_seconds, Map.get(args, "max_seconds"))
+      |> maybe_add_int(:backoff_ms, Map.get(args, "backoff"))
+      |> maybe_add_int(:activity_timeout, Map.get(args, "activity_timeout"))
 
     case Overmind.run(command, opts) do
       {:ok, id} -> %{"ok" => id}
@@ -32,6 +37,15 @@ defmodule Overmind.APIServer do
   def dispatch(%{"cmd" => "ps"}) do
     missions = Overmind.ps()
     %{"ok" => Overmind.format_ps(missions)}
+  end
+
+  def dispatch(%{"cmd" => "info"} = req) do
+    id = get_in(req, ["args", "id"])
+
+    case Overmind.info(id) do
+      {:ok, info} -> %{"ok" => info}
+      {:error, reason} -> %{"error" => to_string(reason)}
+    end
   end
 
   def dispatch(%{"cmd" => "logs"} = req) do
@@ -71,12 +85,19 @@ defmodule Overmind.APIServer do
     end
   end
 
+  # CWD is fetched separately because the CLI needs it to `cd` before
+  # running `claude --resume` (session state lives in the mission's CWD).
   def dispatch(%{"cmd" => "pause"} = req) do
     id = get_in(req, ["args", "id"])
+    resolved = Overmind.Mission.Store.resolve_id(id)
 
     case Overmind.pause(id) do
-      {:ok, session_id} -> %{"ok" => session_id}
-      {:error, reason} -> %{"error" => to_string(reason)}
+      {:ok, session_id} ->
+        cwd = Overmind.Mission.Store.lookup_cwd(resolved)
+        %{"ok" => %{"session_id" => session_id, "cwd" => cwd}}
+
+      {:error, reason} ->
+        %{"error" => to_string(reason)}
     end
   end
 
@@ -89,6 +110,8 @@ defmodule Overmind.APIServer do
     end
   end
 
+  # Async shutdown: spawn with delay so the JSON response reaches the client
+  # before :init.stop() tears down the VM and closes the socket.
   def dispatch(%{"cmd" => "shutdown"}) do
     spawn(fn ->
       Process.sleep(100)
@@ -108,6 +131,9 @@ defmodule Overmind.APIServer do
 
   # GenServer callbacks
 
+  # Unix domain socket via :gen_tcp with {:ifaddr, {:local, path}}.
+  # Port 0 is required by :gen_tcp but ignored for Unix sockets.
+  # Protocol: newline-delimited JSON (one request, one response per connection).
   @impl true
   def init(opts) do
     path = Keyword.get(opts, :socket_path, @default_socket_path)
@@ -147,6 +173,8 @@ defmodule Overmind.APIServer do
     end
   end
 
+  # One request per connection: read JSON line, dispatch, respond, close.
+  # 5s timeout guards against hung clients holding the socket.
   defp handle_client(client) do
     case :gen_tcp.recv(client, 0, 5000) do
       {:ok, line} ->
@@ -178,4 +206,17 @@ defmodule Overmind.APIServer do
 
   defp maybe_add_name(opts, nil), do: opts
   defp maybe_add_name(opts, name), do: Keyword.put(opts, :name, name)
+
+  defp maybe_add_restart(opts, nil), do: opts
+  defp maybe_add_restart(opts, str), do: Keyword.put(opts, :restart_policy, parse_restart(str))
+
+  defp maybe_add_int(opts, _key, nil), do: opts
+  defp maybe_add_int(opts, key, val) when is_integer(val), do: Keyword.put(opts, key, val)
+  defp maybe_add_int(opts, key, val) when is_binary(val), do: Keyword.put(opts, key, String.to_integer(val))
+
+  defp parse_restart("on-failure"), do: :on_failure
+  defp parse_restart("on_failure"), do: :on_failure
+  defp parse_restart("always"), do: :always
+  defp parse_restart("never"), do: :never
+  defp parse_restart(_), do: :never
 end

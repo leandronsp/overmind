@@ -15,13 +15,24 @@ defmodule Overmind.Provider.ClaudeTest do
     end
   end
 
-  describe "build_session_command/0" do
+  describe "build_session_command/1" do
     test "returns claude with stream-json flags" do
       cmd = Claude.build_session_command()
       assert cmd =~ "claude -p"
       assert cmd =~ "--input-format stream-json"
       assert cmd =~ "--output-format stream-json"
       assert cmd =~ "--verbose"
+      refute cmd =~ "--resume"
+    end
+
+    test "appends --resume when session_id provided" do
+      cmd = Claude.build_session_command(session_id: "sess-abc")
+      assert cmd =~ "--resume sess-abc"
+    end
+
+    test "no --resume when session_id is nil" do
+      cmd = Claude.build_session_command(session_id: nil)
+      refute cmd =~ "--resume"
     end
   end
 

@@ -179,14 +179,68 @@ defmodule Overmind.Mission.StoreTest do
     end
   end
 
+  describe "lookup/1 with :restarting status" do
+    test "returns {:restarting, pid, command, started_at} when process alive" do
+      pid = self()
+      Store.insert("abc", {pid, "false", :restarting, 1000})
+
+      assert {:restarting, ^pid, "false", 1000} = Store.lookup("abc")
+    end
+
+    test "returns {:exited, :restarting, command, started_at} when process dead" do
+      {:ok, pid} = Agent.start_link(fn -> :ok end)
+      Agent.stop(pid)
+      Process.sleep(10)
+      Store.insert("abc", {pid, "false", :restarting, 1000})
+
+      assert {:exited, :restarting, "false", 1000} = Store.lookup("abc")
+    end
+  end
+
+  describe "insert_restart_policy/2 and lookup_restart_policy/1" do
+    test "stores and retrieves restart policy" do
+      Store.insert_restart_policy("m1", :on_failure)
+      assert Store.lookup_restart_policy("m1") == :on_failure
+    end
+
+    test "returns :never as default" do
+      assert Store.lookup_restart_policy("nope") == :never
+    end
+  end
+
+  describe "insert_restart_count/2 and lookup_restart_count/1" do
+    test "stores and retrieves restart count" do
+      Store.insert_restart_count("m1", 3)
+      assert Store.lookup_restart_count("m1") == 3
+    end
+
+    test "returns 0 as default" do
+      assert Store.lookup_restart_count("nope") == 0
+    end
+  end
+
+  describe "insert_last_activity/2 and lookup_last_activity/1" do
+    test "stores and retrieves last activity timestamp" do
+      Store.insert_last_activity("m1", 1_709_000_000)
+      assert Store.lookup_last_activity("m1") == 1_709_000_000
+    end
+
+    test "returns nil as default" do
+      assert Store.lookup_last_activity("nope") == nil
+    end
+  end
+
   describe "cleanup/1 with all metadata" do
-    test "removes type, session_id, attached, cwd and name entries" do
+    test "removes type, session_id, attached, cwd, name, restart and activity entries" do
       Store.insert("m1", {self(), "cmd", :stopped, 100})
       Store.insert_type("m1", :session)
       Store.insert_session_id("m1", "sess-abc")
       Store.insert_attached("m1", true)
       Store.insert_cwd("m1", "/tmp")
       Store.insert_name("m1", "bold-arc")
+      Store.insert_restart_policy("m1", :on_failure)
+      Store.insert_restart_count("m1", 2)
+      Store.insert_last_activity("m1", 1_000_000)
       Store.persist_after_exit("m1", "logs", [])
 
       Store.cleanup("m1")
@@ -196,6 +250,9 @@ defmodule Overmind.Mission.StoreTest do
       assert Store.lookup_attached("m1") == false
       assert Store.lookup_cwd("m1") == nil
       assert Store.lookup_name("m1") == nil
+      assert Store.lookup_restart_policy("m1") == :never
+      assert Store.lookup_restart_count("m1") == 0
+      assert Store.lookup_last_activity("m1") == nil
     end
   end
 

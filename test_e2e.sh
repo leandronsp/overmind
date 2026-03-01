@@ -196,6 +196,155 @@ sleep 1
 found=$($CLI ps | grep "$id" || true)
 assert_eq "removed from ps" "$found" ""
 
+echo -e "\n${YELLOW}=== Restart: on-failure with max-restarts ===${NC}"
+out=$($CLI run --restart on-failure --max-restarts 2 --backoff 200 "false")
+id=$(extract_id "$out")
+assert_contains "started" "$out" "Started mission"
+sleep 3
+status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
+assert_eq "crashed after max restarts" "$status" "crashed"
+restarts=$($CLI ps | grep "$id" | awk '{print $5}' || true)
+assert_eq "restart count" "$restarts" "2"
+logs=$($CLI logs "$id" || true)
+assert_contains "restart marker" "$logs" "restart #1"
+assert_contains "restart marker 2" "$logs" "restart #2"
+
+echo -e "\n${YELLOW}=== Restart: on-failure does not restart exit 0 ===${NC}"
+out=$($CLI run --restart on-failure --max-restarts 3 --backoff 200 "true")
+id=$(extract_id "$out")
+assert_contains "started" "$out" "Started mission"
+sleep 1
+status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
+assert_eq "stopped normally" "$status" "stopped"
+restarts=$($CLI ps | grep "$id" | awk '{print $5}' || true)
+assert_eq "no restarts" "$restarts" "0"
+
+echo -e "\n${YELLOW}=== Restart: stop during restart cancels restart ===${NC}"
+out=$($CLI run --restart on-failure --max-restarts 5 --backoff 5000 "false")
+id=$(extract_id "$out")
+sleep 1
+status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
+assert_eq "restarting" "$status" "restarting"
+$CLI stop "$id" >/dev/null
+sleep 1
+status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
+assert_eq "stopped after cancel" "$status" "stopped"
+
+echo -e "\n${YELLOW}=== Stall: activity-timeout kills idle process ===${NC}"
+out=$($CLI run --activity-timeout 2 "sleep 60")
+id=$(extract_id "$out")
+assert_contains "started" "$out" "Started mission"
+sleep 4
+status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
+assert_eq "crashed from stall" "$status" "crashed"
+logs=$($CLI logs "$id" || true)
+assert_contains "stall marker" "$logs" "killed: no activity for"
+
+echo -e "\n${YELLOW}=== Info: full mission details ===${NC}"
+out=$($CLI run --name info-agent --cwd /tmp --restart on-failure --max-restarts 3 --activity-timeout 30 "sleep 60")
+id=$(extract_id "$out")
+sleep 1
+info=$($CLI info "$id" || true)
+assert_contains "info has os_pid" "$info" "os_pid"
+assert_contains "info has status" "$info" "running"
+assert_contains "info has name" "$info" "info-agent"
+assert_contains "info has cwd" "$info" "/tmp"
+assert_contains "info has restart_policy" "$info" "on_failure"
+assert_contains "info has restart_count" "$info" "restart_count"
+assert_contains "info has type" "$info" "task"
+# info by name
+info2=$($CLI info "info-agent" || true)
+assert_contains "info by name" "$info2" "os_pid"
+$CLI stop "$id" >/dev/null
+sleep 1
+
+extract_os_pid() {
+  printf '%s' "$1" | sed 's/.*"os_pid":\([0-9]*\).*/\1/'
+}
+
+echo -e "\n${YELLOW}=== External kill: no self-healing stays crashed ===${NC}"
+out=$($CLI run "sleep 60")
+id=$(extract_id "$out")
+sleep 1
+info=$($CLI info "$id")
+pid=$(extract_os_pid "$info")
+if [ -n "$pid" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
+  echo -e "  ${GREEN}✓${NC} got OS pid $pid from info"
+  ((pass++))
+else
+  echo -e "  ${RED}✗${NC} could not get OS pid from info"
+  ((fail++))
+fi
+kill -9 "$pid" 2>/dev/null
+sleep 1
+status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
+assert_eq "crashed after external kill" "$status" "crashed"
+restarts=$($CLI ps | grep "$id" | awk '{print $5}' || true)
+assert_eq "no restarts (no policy)" "$restarts" "0"
+
+echo -e "\n${YELLOW}=== External kill: self-healing restarts ===${NC}"
+out=$($CLI run --restart on-failure --max-restarts 2 --backoff 500 "sleep 60")
+id=$(extract_id "$out")
+sleep 1
+info=$($CLI info "$id")
+pid=$(extract_os_pid "$info")
+if [ -n "$pid" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
+  echo -e "  ${GREEN}✓${NC} got OS pid $pid from info"
+  ((pass++))
+else
+  echo -e "  ${RED}✗${NC} could not get OS pid from info"
+  ((fail++))
+fi
+kill -9 "$pid" 2>/dev/null
+sleep 2
+status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
+assert_eq "restarted after external kill" "$status" "running"
+restarts=$($CLI ps | grep "$id" | awk '{print $5}' || true)
+assert_eq "restart count is 1" "$restarts" "1"
+info2=$($CLI info "$id")
+pid2=$(extract_os_pid "$info2")
+if [ -n "$pid2" ] && [ "$pid2" != "$pid" ]; then
+  echo -e "  ${GREEN}✓${NC} new OS pid $pid2 (was $pid)"
+  ((pass++))
+else
+  echo -e "  ${RED}✗${NC} expected new pid, got '$pid2' (old was $pid)"
+  ((fail++))
+fi
+$CLI stop "$id" >/dev/null
+sleep 1
+
+echo -e "\n${YELLOW}=== Sliding window: slow stalls restart beyond max ===${NC}"
+# max_restarts=1 within 1s window, but each stall takes 2s → never 2 restarts in 1s
+out=$($CLI run --restart on-failure --max-restarts 1 --max-seconds 1 --backoff 50 --activity-timeout 2 "sleep 60")
+id=$(extract_id "$out")
+assert_contains "started" "$out" "Started mission"
+# After 2s: stall kill → restart (window clear) → 2s: stall kill → restart...
+# Wait long enough for 2 full stall cycles (each ~2s stall + restart)
+sleep 7
+restarts=$($CLI ps | grep "$id" | awk '{print $5}' || true)
+if [ "$restarts" -ge 2 ] 2>/dev/null; then
+  echo -e "  ${GREEN}✓${NC} restarted $restarts times (exceeds max_restarts=1 via sliding window)"
+  ((pass++))
+else
+  echo -e "  ${RED}✗${NC} expected >=2 restarts, got '$restarts'"
+  ((fail++))
+fi
+status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
+assert_eq "still running or restarting" "$status" "running"
+$CLI stop "$id" >/dev/null
+sleep 1
+
+echo -e "\n${YELLOW}=== Sliding window: fast crash loop trips circuit breaker ===${NC}"
+# max_restarts=2 within 60s window, command exits instantly → 2 restarts in <1s → stops
+out=$($CLI run --restart on-failure --max-restarts 2 --max-seconds 60 --backoff 50 "false")
+id=$(extract_id "$out")
+assert_contains "started" "$out" "Started mission"
+sleep 3
+status=$($CLI ps | grep "$id" | awk '{print $4}' || true)
+assert_eq "crashed from crash loop" "$status" "crashed"
+restarts=$($CLI ps | grep "$id" | awk '{print $5}' || true)
+assert_eq "exactly 2 restarts" "$restarts" "2"
+
 echo -e "\n${YELLOW}=== Cleanup ===${NC}"
 $CLI shutdown
 
