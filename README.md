@@ -85,6 +85,18 @@ mix e2e            # full E2E tests (daemon, raw commands, claude, sessions)
 | M4 | Full Isolation | |
 | M5 | Shared Akasha | |
 | M6 | Web Dashboard | |
+=======
+| Milestone | Name | Description |
+|-----------|------|-------------|
+| **M0** | **Spawn & Observe** | **`run`, `ps`, `logs`, `stop`, `kill`, daemon, providers** |
+| **M0.5** | **CWD + Names** | **`--cwd`, `--name`, auto-generated names, name resolution** |
+| **M1** | **Session Agents** | **`--type session`, multi-turn agents, `send`, `attach`** |
+| **M2** | **Self-Healing** | **Restart policies, exponential backoff, stall detection** |
+| M2.5 | Agent Orchestration | Orchestrator pattern, optional hierarchy (`--parent`), `kill --cascade` |
+| M3 | Declarative Config | Blueprint TOML, `overmind apply` |
+| M4 | Full Isolation | Worktree + port allocation + Docker services |
+| M5 | Shared Akasha | Distributed codebase memory |
+| M6 | Web Dashboard | Phoenix LiveView |
 
 ## License
 
