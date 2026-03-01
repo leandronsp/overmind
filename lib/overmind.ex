@@ -2,6 +2,7 @@ defmodule Overmind do
   @moduledoc false
 
   alias Overmind.Mission
+  alias Overmind.Mission.Client
   alias Overmind.Mission.Store
 
   @spec run(String.t(), keyword() | module()) :: {:ok, String.t()} | {:error, term()}
@@ -80,39 +81,39 @@ defmodule Overmind do
   end
 
   @spec pause(String.t()) :: {:ok, String.t() | nil} | {:error, :not_found | :not_running | :not_session}
-  def pause(id), do: id |> Store.resolve_id() |> Mission.pause()
+  def pause(id), do: id |> Store.resolve_id() |> Client.pause()
 
   @spec unpause(String.t()) :: :ok | {:error, :not_found | :not_running}
-  def unpause(id), do: id |> Store.resolve_id() |> Mission.unpause()
+  def unpause(id), do: id |> Store.resolve_id() |> Client.unpause()
 
   @spec send(String.t(), String.t()) :: :ok | {:error, :not_found | :not_running | :not_session | :paused}
   def send(id, message) do
-    id |> Store.resolve_id() |> Mission.send_message(message)
+    id |> Store.resolve_id() |> Client.send_message(message)
   end
 
   @spec info(String.t()) :: {:ok, map()} | {:error, :not_found}
   def info(id) do
-    id |> Store.resolve_id() |> Mission.get_info()
+    id |> Store.resolve_id() |> Client.get_info()
   end
 
   @spec logs(String.t()) :: {:ok, String.t()} | {:error, :not_found}
   def logs(id) do
-    id |> Store.resolve_id() |> Mission.get_logs()
+    id |> Store.resolve_id() |> Client.get_logs()
   end
 
   @spec raw_events(String.t()) :: {:ok, [map()]} | {:error, :not_found}
   def raw_events(id) do
-    id |> Store.resolve_id() |> Mission.get_raw_events()
+    id |> Store.resolve_id() |> Client.get_raw_events()
   end
 
   @spec stop(String.t()) :: :ok | {:error, :not_found | :not_running}
   def stop(id) do
-    id |> Store.resolve_id() |> Mission.stop()
+    id |> Store.resolve_id() |> Client.stop()
   end
 
   @spec kill(String.t()) :: :ok | {:error, :not_found}
   def kill(id) do
-    id |> Store.resolve_id() |> Mission.kill()
+    id |> Store.resolve_id() |> Client.kill()
   end
 
   @spec format_ps([map()]) :: String.t()

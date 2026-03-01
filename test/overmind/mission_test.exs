@@ -2,6 +2,7 @@ defmodule Overmind.MissionTest do
   use ExUnit.Case
 
   alias Overmind.Mission
+  alias Overmind.Mission.Client
 
   setup do
     Overmind.Test.MissionHelper.cleanup_missions()
@@ -52,7 +53,7 @@ defmodule Overmind.MissionTest do
       id = Mission.generate_id()
       {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60")
 
-      {:ok, info} = Mission.get_info(id)
+      {:ok, info} = Client.get_info(id)
       assert info.id == id
       assert info.command == "sleep 60"
       assert info.status == :running
@@ -68,7 +69,7 @@ defmodule Overmind.MissionTest do
       ref = Process.monitor(pid)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 3000
 
-      {:ok, logs} = Mission.get_logs(id)
+      {:ok, logs} = Client.get_logs(id)
       assert logs =~ "oi"
       assert logs =~ "tchau"
     end
@@ -79,7 +80,7 @@ defmodule Overmind.MissionTest do
       ref = Process.monitor(pid)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 3000
 
-      {:ok, logs} = Mission.get_logs(id)
+      {:ok, logs} = Client.get_logs(id)
       assert logs =~ "first"
       assert logs =~ "last"
     end
@@ -90,7 +91,7 @@ defmodule Overmind.MissionTest do
       ref = Process.monitor(pid)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
 
-      {:ok, logs} = Mission.get_logs(id)
+      {:ok, logs} = Client.get_logs(id)
       assert logs =~ "before"
       refute logs =~ "after"
     end
@@ -103,7 +104,7 @@ defmodule Overmind.MissionTest do
       ref = Process.monitor(pid)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
-      {:ok, logs} = Mission.get_logs(id)
+      {:ok, logs} = Client.get_logs(id)
       assert logs =~ "hello"
     end
 
@@ -113,7 +114,7 @@ defmodule Overmind.MissionTest do
       ref = Process.monitor(pid)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
-      {:ok, logs} = Mission.get_logs(id)
+      {:ok, logs} = Client.get_logs(id)
       assert logs =~ "error"
     end
 
@@ -122,7 +123,7 @@ defmodule Overmind.MissionTest do
       {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60")
       Process.sleep(50)
 
-      {:ok, logs} = Mission.get_logs(id)
+      {:ok, logs} = Client.get_logs(id)
       assert logs == ""
     end
   end
@@ -136,7 +137,7 @@ defmodule Overmind.MissionTest do
       ref = Process.monitor(pid)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
 
-      {:ok, logs} = Mission.get_logs(id)
+      {:ok, logs} = Client.get_logs(id)
       assert logs =~ "Canberra"
     end
 
@@ -148,7 +149,7 @@ defmodule Overmind.MissionTest do
       ref = Process.monitor(pid)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
 
-      {:ok, events} = Mission.get_raw_events(id)
+      {:ok, events} = Client.get_raw_events(id)
       assert length(events) == 1
       assert hd(events)["type"] == "result"
     end
@@ -159,10 +160,10 @@ defmodule Overmind.MissionTest do
       ref = Process.monitor(pid)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
-      {:ok, logs} = Mission.get_logs(id)
+      {:ok, logs} = Client.get_logs(id)
       assert logs =~ "plaintext"
 
-      {:ok, events} = Mission.get_raw_events(id)
+      {:ok, events} = Client.get_raw_events(id)
       assert events == []
     end
   end
@@ -182,7 +183,7 @@ defmodule Overmind.MissionTest do
       {:ok, _pid} = Mission.start_link(id: id, command: "hello", type: :session)
       Process.sleep(100)
 
-      {:ok, logs} = Mission.get_logs(id)
+      {:ok, logs} = Client.get_logs(id)
       assert logs =~ "hello"
     end
 
@@ -191,7 +192,7 @@ defmodule Overmind.MissionTest do
       {:ok, pid} = Mission.start_link(id: id, command: "", type: :session)
       Process.sleep(100)
 
-      {:ok, logs} = Mission.get_logs(id)
+      {:ok, logs} = Client.get_logs(id)
       assert logs == ""
       assert Process.alive?(pid)
     end
@@ -229,7 +230,7 @@ defmodule Overmind.MissionTest do
       ref = Process.monitor(pid)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
-      {:ok, logs} = Mission.get_logs(id)
+      {:ok, logs} = Client.get_logs(id)
       assert logs =~ "tmp"
     end
 
@@ -266,16 +267,16 @@ defmodule Overmind.MissionTest do
       {:ok, _pid} = Mission.start_link(id: id, command: "", type: :session)
       Process.sleep(50)
 
-      assert :ok = Mission.send_message(id, "ping")
+      assert :ok = Client.send_message(id, "ping")
       Process.sleep(100)
 
-      {:ok, logs} = Mission.get_logs(id)
+      {:ok, logs} = Client.get_logs(id)
       assert logs =~ "[human] ping"
       assert logs =~ "ping\n"
     end
 
     test "error for not_found" do
-      assert {:error, :not_found} = Mission.send_message("nonexist", "hello")
+      assert {:error, :not_found} = Client.send_message("nonexist", "hello")
     end
 
     test "error for not_running (exited mission)" do
@@ -284,7 +285,7 @@ defmodule Overmind.MissionTest do
       ref = Process.monitor(pid)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
-      assert {:error, :not_running} = Mission.send_message(id, "hello")
+      assert {:error, :not_running} = Client.send_message(id, "hello")
     end
 
     test "error for task mission" do
@@ -292,7 +293,7 @@ defmodule Overmind.MissionTest do
       {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60", type: :task)
       Process.sleep(50)
 
-      assert {:error, :not_session} = Mission.send_message(id, "hello")
+      assert {:error, :not_session} = Client.send_message(id, "hello")
     end
   end
 
@@ -302,8 +303,8 @@ defmodule Overmind.MissionTest do
       {:ok, _pid} = Mission.start_link(id: id, command: "", type: :session)
       Process.sleep(50)
 
-      assert {:ok, nil} = Mission.pause(id)
-      assert {:error, :paused} = Mission.send_message(id, "nope")
+      assert {:ok, nil} = Client.pause(id)
+      assert {:error, :paused} = Client.send_message(id, "nope")
     end
 
     test "unpause re-enables send" do
@@ -311,9 +312,9 @@ defmodule Overmind.MissionTest do
       {:ok, _pid} = Mission.start_link(id: id, command: "", type: :session)
       Process.sleep(50)
 
-      assert {:ok, nil} = Mission.pause(id)
-      assert :ok = Mission.unpause(id)
-      assert :ok = Mission.send_message(id, "hello")
+      assert {:ok, nil} = Client.pause(id)
+      assert :ok = Client.unpause(id)
+      assert :ok = Client.send_message(id, "hello")
     end
 
     test "pause on task mission errors" do
@@ -321,11 +322,11 @@ defmodule Overmind.MissionTest do
       {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60", type: :task)
       Process.sleep(50)
 
-      assert {:error, :not_session} = Mission.pause(id)
+      assert {:error, :not_session} = Client.pause(id)
     end
 
     test "pause on not found errors" do
-      assert {:error, :not_found} = Mission.pause("nonexist")
+      assert {:error, :not_found} = Client.pause("nonexist")
     end
 
     test "attached flag in store" do
@@ -333,10 +334,10 @@ defmodule Overmind.MissionTest do
       {:ok, _pid} = Mission.start_link(id: id, command: "", type: :session)
       Process.sleep(50)
 
-      {:ok, _} = Mission.pause(id)
+      {:ok, _} = Client.pause(id)
       assert Overmind.Mission.Store.lookup_attached(id) == true
 
-      :ok = Mission.unpause(id)
+      :ok = Client.unpause(id)
       assert Overmind.Mission.Store.lookup_attached(id) == false
     end
   end
@@ -383,7 +384,7 @@ defmodule Overmind.MissionTest do
       ref = Process.monitor(pid)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 3000
 
-      {:ok, logs} = Mission.get_logs(id)
+      {:ok, logs} = Client.get_logs(id)
       assert logs =~ "--- restart #1"
       # Logs persist across restarts — "attempt" appears at least twice
       assert length(String.split(logs, "attempt")) >= 3
@@ -425,7 +426,7 @@ defmodule Overmind.MissionTest do
       ref = Process.monitor(pid)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 3000
 
-      {:ok, logs} = Mission.get_logs(id)
+      {:ok, logs} = Client.get_logs(id)
       assert logs =~ "--- restart #1"
     end
   end
@@ -445,7 +446,7 @@ defmodule Overmind.MissionTest do
 
       Process.sleep(50)
       ref = Process.monitor(pid)
-      :ok = Mission.stop(id)
+      :ok = Client.stop(id)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
 
       [{^id, _, _, :stopped, _}] = :ets.lookup(:overmind_missions, id)
@@ -598,7 +599,7 @@ defmodule Overmind.MissionTest do
       ref = Process.monitor(pid)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 3000
 
-      {:ok, logs} = Mission.get_logs(id)
+      {:ok, logs} = Client.get_logs(id)
       assert logs =~ ~r/--- restart #1 at \d{4}-\d{2}-\d{2}/
     end
   end
@@ -621,7 +622,7 @@ defmodule Overmind.MissionTest do
       assert {:restarting, ^pid, _, _} = Overmind.Mission.Store.lookup(id)
 
       ref = Process.monitor(pid)
-      assert :ok = Mission.stop(id)
+      assert :ok = Client.stop(id)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
 
       [{^id, _, _, :stopped, _}] = :ets.lookup(:overmind_missions, id)
@@ -646,7 +647,7 @@ defmodule Overmind.MissionTest do
       assert {:restarting, ^pid, _, _} = Overmind.Mission.Store.lookup(id)
 
       ref = Process.monitor(pid)
-      assert :ok = Mission.kill(id)
+      assert :ok = Client.kill(id)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
 
       assert :ets.lookup(:overmind_missions, id) == []
@@ -683,7 +684,7 @@ defmodule Overmind.MissionTest do
       ref = Process.monitor(pid)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 3000
 
-      {:ok, logs} = Mission.get_logs(id)
+      {:ok, logs} = Client.get_logs(id)
       assert logs =~ "killed: no activity for"
     end
 
@@ -703,7 +704,7 @@ defmodule Overmind.MissionTest do
       ref = Process.monitor(pid)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 5000
 
-      {:ok, logs} = Mission.get_logs(id)
+      {:ok, logs} = Client.get_logs(id)
       assert logs =~ "killed: no activity for"
       assert logs =~ "--- restart #1"
     end
@@ -723,7 +724,7 @@ defmodule Overmind.MissionTest do
       assert Process.alive?(pid)
 
       # Cleanup
-      Mission.stop(id)
+      Client.stop(id)
       ref = Process.monitor(pid)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
     end

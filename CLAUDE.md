@@ -12,7 +12,10 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 
 ```
 ├── bin/
-│   └── overmind               # Shell script CLI (user-facing, nc -U unix socket)
+│   ├── overmind               # Shell script CLI (dispatch + source)
+│   └── cli/
+│       ├── helpers.sh         # JSON helpers (escape, send_cmd, extract_ok, maybe_json_*)
+│       └── commands.sh        # All cmd_* functions (run, ps, logs, attach, etc.)
 ├── lib/
 │   ├── overmind.ex              # Public API (run, ps, logs, stop, kill, format_ps)
 │   └── overmind/
@@ -21,6 +24,7 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │       ├── daemon.ex            # Daemon runner (starts APIServer, sleeps forever)
 │       ├── mission.ex           # GenServer per spawned process (Port)
 │       ├── mission/
+│       │   ├── client.ex        # Client API (get_logs, stop, kill, pause, info, etc.)
 │       │   ├── store.ex         # ETS operations for mission state
 │       │   └── name.ex          # Agent name generator (adjective-noun)
 │       ├── provider.ex          # Provider behaviour (build_command, parse_line, format_for_logs)
@@ -68,7 +72,7 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 - **Shell CLI** (`bin/overmind`): POSIX shell script, sends JSON over Unix domain socket via `nc -U`
 - **APIServer** (`Overmind.APIServer`): GenServer listening on `~/.overmind/overmind.sock`, dispatches JSON commands to `Overmind.*`
 - **Daemon** (`Overmind.Daemon`): Starts APIServer and sleeps forever (shell script handles lifecycle)
-- **Missions**: Each spawned command is a GenServer under DynamicSupervisor, managing a Port
+- **Missions**: Each spawned command is a GenServer (`Mission`) under DynamicSupervisor, managing a Port. Client API in `Mission.Client`
 - **Providers**: Pluggable command builders/parsers — Raw wraps with `sh -c`, Claude parses stream-json
 - **ETS**: Mission state (status, logs, raw_events, name, cwd, restart_policy, restart_count, last_activity) persists after GenServer exits
 - **Self-Healing**: Restart policies (`:never`, `:on_failure`, `:always`), exponential backoff, stall detection via activity timeout

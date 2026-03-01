@@ -12,9 +12,24 @@ alwaysApply: false
 mix test                              # all unit tests
 mix test test/overmind/mission_test.exs  # single file
 mix test test/overmind/mission_test.exs:42  # single test by line
-mix e2e                               # full daemon + CLI integration
 mix dialyzer                          # type checking (typespecs are tests too)
 ```
+
+## E2E Testing
+
+**NEVER run `mix e2e`** — it spawns Claude CLI which cannot run inside a Claude session.
+
+Instead, run the smoke test after shell or integration changes:
+
+```bash
+mix build 2>&1 | tail -1 && \
+  bin/overmind start && sleep 1 && \
+  bin/overmind run "echo hello" && sleep 1 && \
+  bin/overmind ps && \
+  bin/overmind shutdown
+```
+
+This verifies: build, daemon lifecycle, run, ps, and shutdown. Tell the user to run `mix e2e` themselves for full coverage.
 
 ## TDD Cycle
 
