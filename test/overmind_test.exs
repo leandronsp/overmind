@@ -107,6 +107,37 @@ defmodule OvermindTest do
     end
   end
 
+  describe "status/0" do
+    test "returns daemon health map with expected keys" do
+      status = Overmind.status()
+
+      assert is_binary(status.pid)
+      assert is_binary(status.node)
+      assert is_integer(status.uptime)
+      assert status.uptime >= 0
+      assert is_integer(status.memory_mb)
+      assert status.memory_mb > 0
+      assert is_integer(status.process_count)
+      assert is_integer(status.ets_table_count)
+      assert is_map(status.missions)
+    end
+
+    test "mission counts reflect running and stopped missions" do
+      {:ok, id} = Overmind.run("true")
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+
+      {:ok, _id2} = Overmind.run("sleep 60")
+      Process.sleep(50)
+
+      status = Overmind.status()
+      assert status.missions.running >= 1
+      assert status.missions.stopped >= 1
+      assert status.missions.total >= 2
+    end
+  end
+
   describe "ps/0" do
     test "empty list when no missions" do
       assert Overmind.ps() == []

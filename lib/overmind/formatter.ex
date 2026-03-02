@@ -40,7 +40,7 @@ defmodule Overmind.Formatter do
       String.pad_trailing(m[:parent] || "-", 12) <>
       String.pad_trailing(Integer.to_string(m[:children] || 0), 10) <>
       String.pad_trailing(format_uptime(m.uptime), 10) <>
-      m.command
+      truncate_command(m.command)
   end
 
   defp partition_tree(missions, ids_in_list) do
@@ -77,6 +77,11 @@ defmodule Overmind.Formatter do
   defp tree_child_prefix("", _is_last), do: ""
   defp tree_child_prefix(prefix, _is_last = true), do: prefix <> "   "
   defp tree_child_prefix(prefix, _is_last = false), do: prefix <> "│  "
+
+  @max_command_len 40
+
+  defp truncate_command(cmd) when byte_size(cmd) <= @max_command_len, do: cmd
+  defp truncate_command(cmd), do: String.slice(cmd, 0, @max_command_len - 3) <> "..."
 
   defp format_uptime(seconds) when seconds < 60, do: "#{seconds}s"
   defp format_uptime(seconds) when seconds < 3600, do: "#{div(seconds, 60)}m"

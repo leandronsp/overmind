@@ -74,6 +74,28 @@ defmodule Overmind do
     end
   end
 
+  @spec status() :: map()
+  def status do
+    now = System.system_time(:second)
+    started_at = Application.get_env(:overmind, :started_at, now)
+    counts = Store.count_by_status()
+
+    %{
+      pid: System.pid(),
+      node: to_string(node()),
+      uptime: now - started_at,
+      memory_mb: div(:erlang.memory(:total), 1_048_576),
+      process_count: length(Process.list()),
+      ets_table_count: length(:ets.all()),
+      missions: %{
+        running: Map.get(counts, :running, 0) + Map.get(counts, :restarting, 0),
+        stopped: Map.get(counts, :stopped, 0),
+        crashed: Map.get(counts, :crashed, 0),
+        total: length(Store.list_all())
+      }
+    }
+  end
+
   @spec ps() :: [map()]
   def ps do
     now = System.system_time(:second)
@@ -128,6 +150,11 @@ defmodule Overmind do
   @spec logs(String.t()) :: {:ok, String.t()} | {:error, :not_found}
   def logs(id) do
     id |> Store.resolve_id() |> Client.get_logs()
+  end
+
+  @spec result(String.t()) :: {:ok, map()} | {:error, :not_found | :not_finished}
+  def result(id) do
+    id |> Store.resolve_id() |> Client.get_result()
   end
 
   @spec raw_events(String.t()) :: {:ok, [map()]} | {:error, :not_found}

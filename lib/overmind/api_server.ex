@@ -30,8 +30,12 @@ defmodule Overmind.APIServer do
       |> maybe_add_parent(Map.get(args, "parent"))
 
     case Overmind.run(command, opts) do
-      {:ok, id} -> %{"ok" => id}
-      {:error, reason} -> %{"error" => to_string(reason)}
+      {:ok, id} ->
+        name = Overmind.Mission.Store.lookup_name(id)
+        %{"ok" => %{"id" => id, "name" => name}}
+
+      {:error, reason} ->
+        %{"error" => to_string(reason)}
     end
   end
 
@@ -77,6 +81,15 @@ defmodule Overmind.APIServer do
 
     case Overmind.logs(id) do
       {:ok, logs} -> %{"ok" => logs}
+      {:error, reason} -> %{"error" => to_string(reason)}
+    end
+  end
+
+  def dispatch(%{"cmd" => "result"} = req) do
+    id = get_in(req, ["args", "id"])
+
+    case Overmind.result(id) do
+      {:ok, result} -> %{"ok" => result}
       {:error, reason} -> %{"error" => to_string(reason)}
     end
   end
@@ -139,6 +152,10 @@ defmodule Overmind.APIServer do
       :ok -> %{"ok" => true}
       {:error, reason} -> %{"error" => to_string(reason)}
     end
+  end
+
+  def dispatch(%{"cmd" => "status"}) do
+    %{"ok" => Overmind.status()}
   end
 
   # Async shutdown: spawn with delay so the JSON response reaches the client

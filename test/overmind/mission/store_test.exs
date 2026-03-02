@@ -296,6 +296,21 @@ defmodule Overmind.Mission.StoreTest do
     end
   end
 
+  describe "count_by_status/0" do
+    test "returns empty map when no missions" do
+      assert Store.count_by_status() == %{}
+    end
+
+    test "counts missions by status" do
+      Store.insert("m1", {self(), "sleep 60", :running, 100})
+      Store.insert("m2", {self(), "sleep 60", :running, 100})
+      Store.insert("m3", {self(), "echo hi", :stopped, 100})
+
+      counts = Store.count_by_status()
+      assert counts == %{running: 2, stopped: 1}
+    end
+  end
+
   describe "list_all/0" do
     test "returns only mission tuples, not metadata" do
       pid = self()

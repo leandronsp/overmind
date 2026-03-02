@@ -16,6 +16,19 @@ defmodule Overmind.Mission.Client do
     end
   end
 
+  @spec get_result(String.t()) :: {:ok, map()} | {:error, :not_found | :not_finished}
+  def get_result(id) do
+    case Store.lookup(id) do
+      {:exited, _, _, _} ->
+        events = Store.stored_raw_events(id)
+        {:ok, extract_result(events)}
+
+      {:running, _, _, _} -> {:error, :not_finished}
+      {:restarting, _, _, _} -> {:error, :not_finished}
+      :not_found -> {:error, :not_found}
+    end
+  end
+
   @spec get_raw_events(String.t()) :: {:ok, [map()]} | {:error, :not_found}
   def get_raw_events(id) do
     case Store.lookup(id) do
@@ -202,6 +215,14 @@ defmodule Overmind.Mission.Client do
       {:ok, os_pid} -> os_pid
       :dead -> nil
     end
+  end
+
+  # Extract the last "result" raw_event from a mission's event list.
+  # Returns the raw JSON map (with type, result, cost_usd, etc.) or empty map.
+  defp extract_result(events) do
+    events
+    |> Enum.reverse()
+    |> Enum.find(%{}, &(&1["type"] == "result"))
   end
 
   # Paused = human attached via CLI (attach command). Reject programmatic

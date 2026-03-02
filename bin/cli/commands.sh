@@ -58,6 +58,7 @@ cmd_run() {
   max_seconds=""
   backoff=""
   activity_timeout=""
+  json_output=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -71,6 +72,7 @@ cmd_run() {
       --max-seconds)      max_seconds="$2"; shift 2 ;;
       --backoff)          backoff="$2"; shift 2 ;;
       --activity-timeout) activity_timeout="$2"; shift 2 ;;
+      --json)             json_output="true"; shift ;;
       *)                  command="$command $1"; shift ;;
     esac
   done
@@ -96,8 +98,22 @@ cmd_run() {
 
   json="{\"cmd\":\"run\",\"args\":{\"command\":\"$escaped\",\"type\":\"$type\",\"provider\":\"$provider\"$extra}}"
   response=$(send_cmd "$json") || return 1
-  id=$(extract_ok "$response") || return 1
-  echo "Started mission $id"
+
+  if printf '%s' "$response" | grep -q '"error"'; then
+    err=$(printf '%s' "$response" | sed 's/.*"error":"\([^"]*\)".*/\1/')
+    echo "Error: $err" >&2
+    return 1
+  fi
+
+  # Response: {"ok":{"id":"...","name":"..."}}
+  id=$(printf '%s' "$response" | sed 's/.*"id":"\([^"]*\)".*/\1/')
+  run_name=$(printf '%s' "$response" | sed 's/.*"name":"\([^"]*\)".*/\1/')
+
+  if [ "${json_output:-}" = "true" ]; then
+    printf '{"id":"%s","name":"%s"}\n' "$id" "$run_name"
+  else
+    echo "Started mission $id ($run_name)"
+  fi
 }
 
 cmd_claude_run() {
@@ -150,6 +166,20 @@ cmd_logs() {
   response=$(send_cmd "{\"cmd\":\"logs\",\"args\":{\"id\":\"$escaped\"}}") || return 1
   text=$(extract_ok "$response") || return 1
   unescape_json "$text"
+}
+
+cmd_result() {
+  escaped=$(escape_json "$1")
+  response=$(send_cmd "{\"cmd\":\"result\",\"args\":{\"id\":\"$escaped\"}}") || return 1
+
+  if printf '%s' "$response" | grep -q '"error"'; then
+    err=$(printf '%s' "$response" | sed 's/.*"error":"\([^"]*\)".*/\1/')
+    echo "Error: $err" >&2
+    return 1
+  fi
+
+  # Response: {"ok":{"type":"result","result":"...","cost_usd":N,...}} or {"ok":{}}
+  printf '%s\n' "$response" | sed 's/^{"ok"://' | sed 's/}$//'
 }
 
 cmd_stop() { simple_id_cmd "stop" "$1" "Stopped"; }
@@ -266,8 +296,11 @@ Commands:
   ps --children <id>       Show children of a mission
   info <id>                Show mission info (os_pid, status, etc.)
   logs <id>                Show mission logs
+  result <id>              Show final result of a completed mission (JSON)
   stop <id>                Stop a mission (SIGTERM)
   kill <id>                Kill a mission (SIGKILL)
   kill <id> --cascade      Kill mission and all descendants
+  status                   Show daemon health and mission summary
+  monitor                  Live-refresh status + mission list (Ctrl+C to exit)
 EOF
 }

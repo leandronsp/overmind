@@ -9,11 +9,12 @@ defmodule Overmind.APIServerTest do
   end
 
   describe "dispatch/1" do
-    test "run returns mission id" do
+    test "run returns id and name" do
       result = APIServer.dispatch(%{"cmd" => "run", "args" => %{"command" => "sleep 60"}})
-      assert %{"ok" => id} = result
+      assert %{"ok" => %{"id" => id, "name" => name}} = result
       assert is_binary(id)
       assert String.length(id) == 8
+      assert is_binary(name)
     end
 
     test "run with session type" do
@@ -23,7 +24,7 @@ defmodule Overmind.APIServerTest do
           "args" => %{"command" => "", "type" => "session"}
         })
 
-      assert %{"ok" => id} = result
+      assert %{"ok" => %{"id" => id}} = result
       assert String.length(id) == 8
     end
 
@@ -34,7 +35,7 @@ defmodule Overmind.APIServerTest do
           "args" => %{"command" => "sleep 60", "name" => "my-agent"}
         })
 
-      assert %{"ok" => id} = result
+      assert %{"ok" => %{"id" => id, "name" => "my-agent"}} = result
       assert Overmind.Mission.Store.lookup_name(id) == "my-agent"
     end
 
@@ -45,7 +46,7 @@ defmodule Overmind.APIServerTest do
           "args" => %{"command" => "pwd", "cwd" => "/tmp"}
         })
 
-      assert %{"ok" => id} = result
+      assert %{"ok" => %{"id" => id}} = result
 
       [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
       ref = Process.monitor(pid)
@@ -68,7 +69,7 @@ defmodule Overmind.APIServerTest do
           }
         })
 
-      assert %{"ok" => id} = result
+      assert %{"ok" => %{"id" => id}} = result
       assert Overmind.Mission.Store.lookup_restart_policy(id) == :on_failure
     end
 
@@ -81,7 +82,7 @@ defmodule Overmind.APIServerTest do
           "args" => %{"command" => "sleep 60", "parent" => parent_id}
         })
 
-      assert %{"ok" => child_id} = result
+      assert %{"ok" => %{"id" => child_id}} = result
       assert Overmind.Mission.Store.lookup_parent(child_id) == parent_id
     end
 
@@ -186,6 +187,33 @@ defmodule Overmind.APIServerTest do
       assert %{"error" => "not_found"} = result
     end
 
+    test "result returns structured data for completed mission" do
+      script = ~s(sh -c 'echo "{\\\"type\\\":\\\"result\\\",\\\"result\\\":\\\"Done\\\",\\\"duration_ms\\\":100,\\\"cost_usd\\\":0.01,\\\"is_error\\\":false}"')
+
+      {:ok, id} = Overmind.run(script, provider: Overmind.Provider.TestClaude)
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
+
+      result = APIServer.dispatch(%{"cmd" => "result", "args" => %{"id" => id}})
+      assert %{"ok" => data} = result
+      assert data["result"] == "Done"
+      assert data["cost_usd"] == 0.01
+    end
+
+    test "result returns error for running mission" do
+      {:ok, id} = Overmind.run("sleep 60")
+      Process.sleep(50)
+
+      result = APIServer.dispatch(%{"cmd" => "result", "args" => %{"id" => id}})
+      assert %{"error" => "not_finished"} = result
+    end
+
+    test "result returns error for unknown mission" do
+      result = APIServer.dispatch(%{"cmd" => "result", "args" => %{"id" => "nonexist"}})
+      assert %{"error" => "not_found"} = result
+    end
+
     test "stop returns ok" do
       {:ok, id} = Overmind.run("sleep 60")
       Process.sleep(50)
@@ -248,6 +276,15 @@ defmodule Overmind.APIServerTest do
       assert %{"ok" => true} = result
     end
 
+    test "status returns daemon health map" do
+      result = APIServer.dispatch(%{"cmd" => "status"})
+      assert %{"ok" => status} = result
+      assert is_binary(status.pid)
+      assert is_integer(status.uptime)
+      assert is_map(status.missions)
+      assert is_integer(status.missions.total)
+    end
+
     test "unknown command returns error" do
       result = APIServer.dispatch(%{"cmd" => "bogus"})
       assert %{"error" => "unknown command: bogus"} = result
@@ -294,7 +331,7 @@ defmodule Overmind.APIServerTest do
 
       {:ok, response} = :gen_tcp.recv(sock, 0, 5000)
       decoded = :json.decode(String.trim(response))
-      assert %{"ok" => id} = decoded
+      assert %{"ok" => %{"id" => id}} = decoded
       assert String.length(id) == 8
       :gen_tcp.close(sock)
     end

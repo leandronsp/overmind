@@ -18,7 +18,7 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │       ├── commands.sh        # All cmd_* functions (run, ps, logs, attach, etc.)
 │       └── orchestration.sh  # Orchestration commands (wait)
 ├── lib/
-│   ├── overmind.ex              # Public API (run, ps, logs, stop, kill, wait, children)
+│   ├── overmind.ex              # Public API (run, ps, logs, stop, kill, wait, result, children)
 │   └── overmind/
 │       ├── application.ex       # OTP Application (ETS + DynamicSupervisor)
 │       ├── entrypoint.ex        # Escript entry point (daemon bootstrap only)
@@ -26,7 +26,7 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │       ├── formatter.ex         # PS table and tree rendering (format_ps, format_ps_tree)
 │       ├── mission.ex           # GenServer per spawned process (Port)
 │       ├── mission/
-│       │   ├── client.ex        # Client API (get_logs, stop, kill, wait, kill_cascade, pause, info)
+│       │   ├── client.ex        # Client API (get_logs, get_result, stop, kill, wait, kill_cascade, pause, info)
 │       │   ├── store.ex         # ETS operations for mission state
 │       │   └── name.ex          # Agent name generator (adjective-noun)
 │       ├── provider.ex          # Provider behaviour (build_command, parse_line, format_for_logs)
@@ -64,7 +64,8 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │       ├── debug/SKILL.md       # Elixir debugging workflow
 │       ├── learn/SKILL.md       # Session learning extractor
 │       ├── po/SKILL.md          # Product Owner (GitHub issue writer)
-│       └── pr/SKILL.md          # Pull request creator
+│       ├── pr/SKILL.md          # Pull request creator
+│       └── overmind/SKILL.md   # Orchestrator (multi-agent task decomposition)
 ├── test_e2e.sh                  # E2E test script (daemon + raw + claude + session)
 ├── test_smoke.sh                # Smoke test (build, start, run, ps, shutdown)
 ├── mix.exs
@@ -80,7 +81,8 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 - **Providers**: Pluggable command builders/parsers — Raw wraps with `sh -c`, Claude parses stream-json
 - **ETS**: Mission state (status, logs, raw_events, name, cwd, restart_policy, restart_count, last_activity, exit_code, parent) persists after GenServer exits
 - **Self-Healing**: Restart policies (`:never`, `:on_failure`, `:always`), exponential backoff, stall detection via activity timeout
-- **Orchestration**: Parent hierarchy (`--parent`), `wait` (monitor-based blocking), `kill --cascade` (depth-first), `ps --tree`
+- **Orchestration**: Parent hierarchy (`--parent`), `wait` (monitor-based blocking), `kill --cascade` (depth-first), `ps --tree`, `result` (structured output from completed missions)
+- **Self-Awareness**: Missions receive `OVERMIND_MISSION_ID` and `OVERMIND_MISSION_NAME` env vars
 - **Name Resolution**: `Store.resolve_id/1` — all public APIs accept id or agent name
 
 ## Build & Run

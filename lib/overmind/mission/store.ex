@@ -239,6 +239,12 @@ defmodule Overmind.Mission.Store do
     :ok
   end
 
+  @spec count_by_status() :: %{atom() => non_neg_integer()}
+  def count_by_status do
+    list_all()
+    |> Enum.frequencies_by(fn {_id, _pid, _cmd, status, _started} -> status end)
+  end
+
   @spec list_all() :: [{String.t(), pid(), String.t(), atom(), integer()}]
   def list_all do
     :ets.tab2list(@table)

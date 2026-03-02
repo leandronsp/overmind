@@ -223,6 +223,28 @@ defmodule Overmind.MissionTest do
     end
   end
 
+  describe "env vars" do
+    test "injects OVERMIND_MISSION_ID into child process" do
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "env | grep OVERMIND_MISSION_ID")
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
+
+      {:ok, logs} = Client.get_logs(id)
+      assert logs =~ "OVERMIND_MISSION_ID=#{id}"
+    end
+
+    test "injects OVERMIND_MISSION_NAME into child process" do
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "env | grep OVERMIND_MISSION_NAME", name: "test-agent")
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
+
+      {:ok, logs} = Client.get_logs(id)
+      assert logs =~ "OVERMIND_MISSION_NAME=test-agent"
+    end
+  end
+
   describe "parent" do
     test "stores parent_id when provided" do
       id = Mission.generate_id()
@@ -843,6 +865,44 @@ defmodule Overmind.MissionTest do
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
       assert Overmind.Mission.Store.lookup_exit_code(id) == 42
+    end
+  end
+
+  describe "get_result/1" do
+    test "returns result from completed Claude task" do
+      script = ~s(sh -c 'echo "{\\\"type\\\":\\\"result\\\",\\\"result\\\":\\\"Done\\\",\\\"duration_ms\\\":100,\\\"cost_usd\\\":0.01,\\\"is_error\\\":false}"')
+
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: script, provider: Overmind.Provider.TestClaude)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
+
+      {:ok, result} = Client.get_result(id)
+      assert result["result"] == "Done"
+      assert result["cost_usd"] == 0.01
+      assert result["duration_ms"] == 100
+    end
+
+    test "returns empty result for mission with no result event" do
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "echo hello")
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+
+      {:ok, result} = Client.get_result(id)
+      assert result == %{}
+    end
+
+    test "returns not_finished for running mission" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60")
+      Process.sleep(50)
+
+      assert {:error, :not_finished} = Client.get_result(id)
+    end
+
+    test "returns not_found for unknown mission" do
+      assert {:error, :not_found} = Client.get_result("nonexist")
     end
   end
 
