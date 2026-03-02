@@ -176,6 +176,38 @@ defmodule Overmind.Mission.Store do
     end
   end
 
+  @spec insert_parent(String.t(), String.t()) :: true
+  def insert_parent(id, parent_id) do
+    :ets.insert(@table, {{:parent, id}, parent_id})
+  end
+
+  @spec lookup_parent(String.t()) :: String.t() | nil
+  def lookup_parent(id) do
+    case :ets.lookup(@table, {:parent, id}) do
+      [{{:parent, ^id}, parent_id}] -> parent_id
+      [] -> nil
+    end
+  end
+
+  @spec find_children(String.t()) :: [String.t()]
+  def find_children(parent_id) do
+    :ets.match_object(@table, {{:parent, :_}, parent_id})
+    |> Enum.map(fn {{:parent, id}, _} -> id end)
+  end
+
+  @spec insert_exit_code(String.t(), non_neg_integer()) :: true
+  def insert_exit_code(id, code) do
+    :ets.insert(@table, {{:exit_code, id}, code})
+  end
+
+  @spec lookup_exit_code(String.t()) :: non_neg_integer() | nil
+  def lookup_exit_code(id) do
+    case :ets.lookup(@table, {:exit_code, id}) do
+      [{{:exit_code, ^id}, code}] -> code
+      [] -> nil
+    end
+  end
+
   @spec insert_last_activity(String.t(), integer()) :: true
   def insert_last_activity(id, timestamp) do
     :ets.insert(@table, {{:last_activity, id}, timestamp})
@@ -202,6 +234,8 @@ defmodule Overmind.Mission.Store do
     :ets.delete(@table, {:restart_policy, id})
     :ets.delete(@table, {:restart_count, id})
     :ets.delete(@table, {:last_activity, id})
+    :ets.delete(@table, {:exit_code, id})
+    :ets.delete(@table, {:parent, id})
     :ok
   end
 

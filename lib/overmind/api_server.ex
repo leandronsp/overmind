@@ -27,6 +27,7 @@ defmodule Overmind.APIServer do
       |> maybe_add_int(:max_seconds, Map.get(args, "max_seconds"))
       |> maybe_add_int(:backoff_ms, Map.get(args, "backoff"))
       |> maybe_add_int(:activity_timeout, Map.get(args, "activity_timeout"))
+      |> maybe_add_parent(Map.get(args, "parent"))
 
     case Overmind.run(command, opts) do
       {:ok, id} -> %{"ok" => id}
@@ -34,9 +35,32 @@ defmodule Overmind.APIServer do
     end
   end
 
+  def dispatch(%{"cmd" => "ps", "args" => %{"tree" => true}}) do
+    missions = Overmind.ps()
+    %{"ok" => Overmind.format_ps_tree(missions)}
+  end
+
+  def dispatch(%{"cmd" => "ps", "args" => %{"children" => id}}) do
+    missions = Overmind.children(id)
+    %{"ok" => Overmind.format_ps(missions)}
+  end
+
   def dispatch(%{"cmd" => "ps"}) do
     missions = Overmind.ps()
     %{"ok" => Overmind.format_ps(missions)}
+  end
+
+  def dispatch(%{"cmd" => "wait"} = req) do
+    id = get_in(req, ["args", "id"])
+    timeout = get_in(req, ["args", "timeout"])
+
+    case Overmind.wait(id, timeout) do
+      {:ok, result} ->
+        %{"ok" => %{"status" => to_string(result.status), "exit_code" => nil_to_null(result.exit_code)}}
+
+      {:error, reason} ->
+        %{"error" => to_string(reason)}
+    end
   end
 
   def dispatch(%{"cmd" => "info"} = req) do
@@ -61,6 +85,13 @@ defmodule Overmind.APIServer do
     id = get_in(req, ["args", "id"])
 
     case Overmind.stop(id) do
+      :ok -> %{"ok" => true}
+      {:error, reason} -> %{"error" => to_string(reason)}
+    end
+  end
+
+  def dispatch(%{"cmd" => "kill", "args" => %{"cascade" => true, "id" => id}}) do
+    case Overmind.kill_cascade(id) do
       :ok -> %{"ok" => true}
       {:error, reason} -> %{"error" => to_string(reason)}
     end
@@ -94,7 +125,7 @@ defmodule Overmind.APIServer do
     case Overmind.pause(id) do
       {:ok, session_id} ->
         cwd = Overmind.Mission.Store.lookup_cwd(resolved)
-        %{"ok" => %{"session_id" => session_id, "cwd" => cwd}}
+        %{"ok" => %{"session_id" => nil_to_null(session_id), "cwd" => nil_to_null(cwd)}}
 
       {:error, reason} ->
         %{"error" => to_string(reason)}
@@ -206,6 +237,14 @@ defmodule Overmind.APIServer do
 
   defp maybe_add_name(opts, nil), do: opts
   defp maybe_add_name(opts, name), do: Keyword.put(opts, :name, name)
+
+  # Elixir's :json encodes nil as "nil" (string), not JSON null.
+  # Use :null atom to get proper JSON null output.
+  defp nil_to_null(nil), do: :null
+  defp nil_to_null(val), do: val
+
+  defp maybe_add_parent(opts, nil), do: opts
+  defp maybe_add_parent(opts, parent), do: Keyword.put(opts, :parent, parent)
 
   defp maybe_add_restart(opts, nil), do: opts
   defp maybe_add_restart(opts, str), do: Keyword.put(opts, :restart_policy, parse_restart(str))

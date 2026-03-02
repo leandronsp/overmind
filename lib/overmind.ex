@@ -22,16 +22,19 @@ defmodule Overmind do
     max_seconds = Keyword.get(opts, :max_seconds, 60)
     backoff_ms = Keyword.get(opts, :backoff_ms, 1000)
     activity_timeout = Keyword.get(opts, :activity_timeout, 0)
+    parent = Keyword.get(opts, :parent)
 
     with :ok <- validate_type(type),
          :ok <- validate_command(command, type),
-         :ok <- validate_restart_policy(restart_policy) do
+         :ok <- validate_restart_policy(restart_policy),
+         {:ok, resolved_parent} <- validate_parent(parent) do
       start_mission(command, provider, type, cwd, name,
         restart_policy: restart_policy,
         max_restarts: max_restarts,
         max_seconds: max_seconds,
         backoff_ms: backoff_ms,
-        activity_timeout: activity_timeout
+        activity_timeout: activity_timeout,
+        parent: resolved_parent
       )
     end
   end
@@ -45,6 +48,17 @@ defmodule Overmind do
 
   defp validate_restart_policy(policy) when policy in [:never, :on_failure, :always], do: :ok
   defp validate_restart_policy(_), do: {:error, :invalid_restart_policy}
+
+  defp validate_parent(nil), do: {:ok, nil}
+
+  defp validate_parent(parent_id) do
+    resolved = Store.resolve_id(parent_id)
+
+    case Store.lookup(resolved) do
+      :not_found -> {:error, :parent_not_found}
+      _ -> {:ok, resolved}
+    end
+  end
 
   defp start_mission(command, provider, type, cwd, name, extra_opts) do
     id = Mission.generate_id()
@@ -75,6 +89,8 @@ defmodule Overmind do
         session_id: Store.lookup_session_id(id),
         attached: Store.lookup_attached(id),
         restart_count: Store.lookup_restart_count(id),
+        parent: Store.lookup_parent(id),
+        children: length(Store.find_children(id)),
         uptime: now - started_at
       }
     end)
@@ -89,6 +105,19 @@ defmodule Overmind do
   @spec send(String.t(), String.t()) :: :ok | {:error, :not_found | :not_running | :not_session | :paused}
   def send(id, message) do
     id |> Store.resolve_id() |> Client.send_message(message)
+  end
+
+  @spec children(String.t()) :: [map()]
+  def children(id) do
+    resolved = Store.resolve_id(id)
+    child_ids = Store.find_children(resolved)
+    missions = ps()
+    Enum.filter(missions, fn m -> m.id in child_ids end)
+  end
+
+  @spec wait(String.t(), non_neg_integer() | nil) :: {:ok, map()} | {:error, :not_found | :timeout}
+  def wait(id, timeout \\ nil) do
+    id |> Store.resolve_id() |> Client.wait(timeout)
   end
 
   @spec info(String.t()) :: {:ok, map()} | {:error, :not_found}
@@ -116,32 +145,11 @@ defmodule Overmind do
     id |> Store.resolve_id() |> Client.kill()
   end
 
-  @spec format_ps([map()]) :: String.t()
-  def format_ps(missions) do
-    header =
-      String.pad_trailing("ID", 12) <>
-        String.pad_trailing("NAME", 18) <>
-        String.pad_trailing("TYPE", 10) <>
-        String.pad_trailing("STATUS", 14) <>
-        String.pad_trailing("RESTARTS", 10) <>
-        String.pad_trailing("UPTIME", 10) <>
-        "COMMAND"
-
-    lines =
-      Enum.map(missions, fn m ->
-        String.pad_trailing(m.id, 12) <>
-          String.pad_trailing(m[:name] || "", 18) <>
-          String.pad_trailing(Atom.to_string(m.type), 10) <>
-          String.pad_trailing(Atom.to_string(m.status), 14) <>
-          String.pad_trailing(Integer.to_string(m[:restart_count] || 0), 10) <>
-          String.pad_trailing(format_uptime(m.uptime), 10) <>
-          m.command
-      end)
-
-    Enum.join([header | lines], "\n") <> "\n"
+  @spec kill_cascade(String.t()) :: :ok | {:error, :not_found}
+  def kill_cascade(id) do
+    id |> Store.resolve_id() |> Client.kill_cascade()
   end
 
-  defp format_uptime(seconds) when seconds < 60, do: "#{seconds}s"
-  defp format_uptime(seconds) when seconds < 3600, do: "#{div(seconds, 60)}m"
-  defp format_uptime(seconds), do: "#{div(seconds, 3600)}h"
+  defdelegate format_ps(missions), to: Overmind.Formatter
+  defdelegate format_ps_tree(missions), to: Overmind.Formatter
 end

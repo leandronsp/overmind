@@ -11,6 +11,7 @@ LOGFILE="$HOME/.overmind/daemon.log"
 
 . "$BASEDIR/cli/helpers.sh"
 . "$BASEDIR/cli/commands.sh"
+. "$BASEDIR/cli/orchestration.sh"
 
 case "${1:-}" in
   start)       cmd_start ;;
@@ -24,11 +25,12 @@ case "${1:-}" in
       usage
     fi
     ;;
-  ps)          cmd_ps ;;
+  ps)          shift; cmd_ps "$@" ;;
   info)        cmd_info "$2" ;;
   logs)        cmd_logs "$2" ;;
   stop)        cmd_stop "$2" ;;
-  kill)        cmd_kill "$2" ;;
+  kill)        shift; cmd_kill "$@" ;;
+  wait)        shift; cmd_wait "$@" ;;
   send)        shift; cmd_send "$@" ;;
   attach)      cmd_attach "$2" ;;
   detach)      cmd_detach "$2" ;;

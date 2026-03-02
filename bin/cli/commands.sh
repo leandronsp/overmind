@@ -52,6 +52,7 @@ cmd_run() {
   provider="raw"
   cwd=""
   name=""
+  parent=""
   restart=""
   max_restarts=""
   max_seconds=""
@@ -64,6 +65,7 @@ cmd_run() {
       --provider)         provider="$2"; shift 2 ;;
       --cwd)              cwd="$2"; shift 2 ;;
       --name)             name="$2"; shift 2 ;;
+      --parent)           parent="$2"; shift 2 ;;
       --restart)          restart="$2"; shift 2 ;;
       --max-restarts)     max_restarts="$2"; shift 2 ;;
       --max-seconds)      max_seconds="$2"; shift 2 ;;
@@ -85,6 +87,7 @@ cmd_run() {
   extra=""
   extra="$extra$(maybe_json_str "cwd" "$cwd")"
   extra="$extra$(maybe_json_str "name" "$name")"
+  extra="$extra$(maybe_json_str "parent" "$parent")"
   extra="$extra$(maybe_json_str "restart" "$restart")"
   extra="$extra$(maybe_json_int "max_restarts" "$max_restarts")"
   extra="$extra$(maybe_json_int "max_seconds" "$max_seconds")"
@@ -106,7 +109,27 @@ cmd_claude_run() {
 }
 
 cmd_ps() {
-  response=$(send_cmd '{"cmd":"ps"}') || return 1
+  tree=""
+  children=""
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --tree)     tree="true"; shift ;;
+      --children) children="$2"; shift 2 ;;
+      *)          shift ;;
+    esac
+  done
+
+  if [ -n "$children" ]; then
+    escaped=$(escape_json "$children")
+    json="{\"cmd\":\"ps\",\"args\":{\"children\":\"$escaped\"}}"
+  elif [ -n "$tree" ]; then
+    json='{"cmd":"ps","args":{"tree":true}}'
+  else
+    json='{"cmd":"ps"}'
+  fi
+
+  response=$(send_cmd "$json") || return 1
   text=$(extract_ok "$response") || return 1
   unescape_json "$text"
 }
@@ -130,7 +153,32 @@ cmd_logs() {
 }
 
 cmd_stop() { simple_id_cmd "stop" "$1" "Stopped"; }
-cmd_kill() { simple_id_cmd "kill" "$1" "Killed"; }
+cmd_kill() {
+  id=""
+  cascade=""
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --cascade) cascade="true"; shift ;;
+      *)         id="$1"; shift ;;
+    esac
+  done
+
+  if [ -z "$id" ]; then
+    echo "Missing id. Usage: overmind kill <id> [--cascade]"
+    return 1
+  fi
+
+  escaped=$(escape_json "$id")
+
+  if [ -n "$cascade" ]; then
+    response=$(send_cmd "{\"cmd\":\"kill\",\"args\":{\"id\":\"$escaped\",\"cascade\":true}}") || return 1
+    extract_ok "$response" > /dev/null || return 1
+    echo "Killed mission $id and all children"
+  else
+    simple_id_cmd "kill" "$id" "Killed"
+  fi
+}
 
 cmd_send() {
   id="$1"
@@ -158,9 +206,16 @@ cmd_attach() {
     return 1
   fi
 
-  # Response: {"ok":{"session_id":"...","cwd":"..."}}
-  session_id=$(printf '%s' "$response" | sed 's/.*"session_id":"\([^"]*\)".*/\1/')
-  cwd=$(printf '%s' "$response" | sed 's/.*"cwd":"\([^"]*\)".*/\1/')
+  # Response: {"ok":{"session_id":"...","cwd":"..."}} or {"ok":{"session_id":null,"cwd":null}}
+  # sed won't match unquoted null values — grep first to detect quoted strings
+  session_id=""
+  if printf '%s' "$response" | grep -q '"session_id":"'; then
+    session_id=$(printf '%s' "$response" | sed 's/.*"session_id":"\([^"]*\)".*/\1/')
+  fi
+  cwd=""
+  if printf '%s' "$response" | grep -q '"cwd":"'; then
+    cwd=$(printf '%s' "$response" | sed 's/.*"cwd":"\([^"]*\)".*/\1/')
+  fi
 
   # No session yet (first prompt hasn't been sent) — unpause and bail
   if [ "$session_id" = "null" ] || [ -z "$session_id" ]; then
@@ -182,7 +237,7 @@ cmd_attach() {
 
 usage() {
   cat <<'EOF'
-Overmind v0.1.0 — Kubernetes for AI Agents
+Overmind v0.2.0 — Kubernetes for AI Agents
 
 Usage: overmind <command> [options]
 
@@ -194,19 +249,25 @@ Commands:
   run --provider claude    Spawn with Claude provider
   run --cwd <path>         Set working directory
   run --name <name>        Set agent name (auto-generated if omitted)
+  run --parent <id>        Set parent mission (for hierarchy)
   run --restart <policy>   Restart policy: never, on-failure, always
   run --max-restarts <n>   Max restart attempts within window (0 = unlimited, default 5)
   run --max-seconds <s>    Sliding window for restart budget (default 60)
   run --backoff <ms>       Base backoff in ms (default 1000, exponential)
   run --activity-timeout <s>  Kill after N seconds of no output (0 = disabled)
   claude run <prompt>      Spawn a Claude agent (task mode)
+  wait <id>                Wait for mission to finish (returns exit code)
+  wait <id> --timeout <ms> Wait with timeout
   send <id> <message>      Send a message to a session
   attach <id>              Attach to a session (TUI)
   detach <id>              Unpause after manual attach
   ps                       List all missions
+  ps --tree                Show mission hierarchy as tree
+  ps --children <id>       Show children of a mission
   info <id>                Show mission info (os_pid, status, etc.)
   logs <id>                Show mission logs
   stop <id>                Stop a mission (SIGTERM)
   kill <id>                Kill a mission (SIGKILL)
+  kill <id> --cascade      Kill mission and all descendants
 EOF
 }
