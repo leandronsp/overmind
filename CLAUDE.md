@@ -18,11 +18,12 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │       ├── commands.sh        # All cmd_* functions (run, ps, logs, attach, etc.)
 │       └── orchestration.sh  # Orchestration commands (wait)
 ├── lib/
-│   ├── overmind.ex              # Public API (run, ps, logs, stop, kill, wait, children, format_ps)
+│   ├── overmind.ex              # Public API (run, ps, logs, stop, kill, wait, children)
 │   └── overmind/
 │       ├── application.ex       # OTP Application (ETS + DynamicSupervisor)
 │       ├── entrypoint.ex        # Escript entry point (daemon bootstrap only)
 │       ├── daemon.ex            # Daemon runner (starts APIServer, sleeps forever)
+│       ├── formatter.ex         # PS table and tree rendering (format_ps, format_ps_tree)
 │       ├── mission.ex           # GenServer per spawned process (Port)
 │       ├── mission/
 │       │   ├── client.ex        # Client API (get_logs, stop, kill, wait, kill_cascade, pause, info)

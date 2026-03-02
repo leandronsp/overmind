@@ -32,8 +32,15 @@ cmd_wait() {
   fi
 
   # Parse status and exit_code from {"ok":{"status":"...","exit_code":N}}
+  # exit_code may be null (killed missions) — sed only captures digits,
+  # so null/missing yields empty string which defaults to 137 (SIGKILL).
   status=$(printf '%s' "$response" | sed 's/.*"status":"\([^"]*\)".*/\1/')
   exit_code=$(printf '%s' "$response" | sed 's/.*"exit_code":\([0-9]*\).*/\1/')
+
+  if [ -z "$exit_code" ]; then
+    echo "Mission $id finished: $status (no exit code)"
+    return 137
+  fi
 
   echo "Mission $id finished: $status (exit code $exit_code)"
   return "$exit_code"
