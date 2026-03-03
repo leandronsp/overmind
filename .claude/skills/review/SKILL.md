@@ -1,255 +1,322 @@
 ---
 name: review
-description: Deep code review - Elixir idioms, OTP patterns, tech debt, safety. Builds a plan to address findings. Use when: review, review this, code review, check this code, review my changes, is this good, what do you think, techdebt, tech debt, code smells.
+description: Deep code review - Elixir idioms, OTP patterns, tech debt, safety. Launches 3 parallel reviewers + plan-reviewer gate. Use when: review, review this, code review, check this code, review my changes, is this good, what do you think, techdebt, tech debt, code smells.
 ---
 
-# Code Review — Elixir/OTP & Shell Expert
+# Code Review — Parallel Agents + Plan-Reviewer Gate
 
-**Reviews current changes for correctness, idioms, tech debt, OTP safety, and shell scripting quality. Builds a fix plan for findings.**
+**Reviews current changes for correctness, idioms, tech debt, OTP safety, and shell scripting quality. Three parallel code-reviewer agents with focused scopes, aggregated findings, and a plan-reviewer critique before presenting fixes.**
 
 ## Workflow
 
-1. **Diff the branch** against main to understand all changes
-2. **Review** using the priorities below (includes tech debt audit)
-3. **Enter plan mode** with a fix plan if there are Critical or Important findings
-4. **Implement fixes** after user approves the plan
-5. **Re-run `mix test`, `mix dialyzer`, and `mix smoke`** to confirm everything is clean
+### Phase 1: Diff
 
-If the review finds nothing actionable, skip the plan and report the verdict.
+Get the full diff and diff stat against main:
 
-## Review Priorities
-
-### 0. Documentation
-- Does `CLAUDE.md` "Project Structure" match the actual `lib/` and `test/` layout?
-- Are new modules, files, or features reflected in the structure section?
-- Are removed/renamed modules cleaned from the structure section?
-- Do new public functions have `@spec`?
-- Do new structs have `@type t :: %__MODULE__{}`?
-- Non-obvious logic has explanatory comments (WHY, not WHAT)
-- Shell scripts have section headers and gotcha comments
-
-### 1. Correctness
-- Does the logic work? (state machines, ETS operations, process lifecycle)
-- Are edge cases handled? (dead processes, missing ETS entries, empty input)
-- Are GenServer callbacks correct? (proper return tuples, state transitions)
-- Does Port management handle exit_status and cleanup correctly?
-
-### 2. Elixir Idioms & Tech Debt
-
-#### Control Flow
-
-| Red Flag | Correct Pattern |
-|----------|-----------------|
-| `if/else` for boolean dispatch | Multi-clause functions with pattern matching |
-| `unless` | Multi-clause with negated match or guard |
-| Nested `case` inside `case` | Extract inner match to a helper function |
-| `cond` matching a single value | `case` or function heads |
-| `do_x(true/false)` naming | Descriptive: `start_daemon(_already_running = true)` |
-| Inline `if x, do: a, else: b` for nil | `maybe_x(nil)` / `maybe_x(val)` pattern |
-
-```elixir
-# BAD
-if alive?() do
-  IO.puts("Running")
-else
-  do_start()
-end
-
-# GOOD
-defp start_daemon(_already_running = true), do: IO.puts("Running")
-defp start_daemon(_not_running = false), do: do_start()
-
-# BAD
-events = if raw, do: events ++ [raw], else: events
-
-# GOOD
-defp maybe_append(list, nil), do: list
-defp maybe_append(list, event), do: list ++ [event]
+```bash
+git diff main...HEAD
+git diff main...HEAD --stat
 ```
 
-#### Boilerplate & DRY
+### Phase 2: Parallel Review
 
-| Red Flag | Correct Pattern |
-|----------|-----------------|
-| Same ETS lookup + try/catch 3+ times | Extract to Store/helper module |
-| Same cleanup code in multiple places | Single `cleanup/1` function |
-| Same test setup in 3+ test files | Extract to `test/support/` helper |
-| God modules (>200 lines) | Extract submodules |
+Launch **3 `code-reviewer` agents in parallel** (single message, 3 Agent tool calls). Each gets the full diff but a focused mandate.
 
-#### Naming
+**CRITICAL**: Launch all 3 agents in the **same message** so they run concurrently. Do NOT launch them sequentially.
 
-```elixir
-# BAD
-def handle_info({p, {:data, d}}, %{port: p} = s) do
+#### Agent 1: Correctness & Safety
 
-# GOOD
-def handle_info({port, {:data, data}}, %{port: port} = state) do
+```
+subagent_type: code-reviewer
+prompt: |
+  You are reviewing an Elixir/OTP + POSIX shell codebase. Focus ONLY on correctness and safety.
+
+  ## Your scope
+
+  ### Elixir correctness
+  - Logic bugs, broken state machines, wrong ETS operations
+  - GenServer callback correctness (return tuples, state transitions)
+  - Port lifecycle — exit_status handling, cleanup
+  - Race conditions, dead process handling
+  - `Store.safe_call/2` usage for GenServer.call to possibly-dead processes
+  - Raw `:ets` calls outside Store module (should use Store)
+  - Missing `@impl true` on GenServer callbacks
+
+  ### Shell safety
+  - Missing `set -e` at top
+  - Missing `trap cleanup EXIT` for temp files, sockets
+  - `exec` inside trapped functions (replaces shell, trap lost)
+  - Unquoted variables — must always be `"$var"`, `"$(cmd)"`
+  - Unchecked command failures — need `cmd || { echo "error" >&2; return 1; }`
+  - Exit code handling
+
+  ### Edge cases
+  - Dead processes (send to exited GenServer)
+  - Missing ETS entries
+  - Empty input / nil handling
+  - `set -e` + `&&` short-circuit (returns exit 1 on empty val — use if/then/fi)
+
+  ## Output format
+
+  Return findings as a markdown list, grouped by severity:
+
+  ### Critical
+  1) **Issue**: description
+     **Location**: `file:line`
+     **Fix**: solution
+
+  ### Important
+  A) **Issue**: description
+     **Location**: `file:line`
+     **Suggestion**: approach
+
+  ### Minor
+  * Nitpick or suggestion
+
+  ### Positive
+  - What's done well
+
+  If no findings in a tier, omit that section. Be specific — cite file:line for every finding.
+
+  ## Diff to review
+
+  <diff>
+  {PASTE FULL DIFF HERE}
+  </diff>
 ```
 
-#### Code Smells
+#### Agent 2: Idioms & Architecture
 
-- Commenting obvious code (self-documenting names need no narration)
-- Missing comments on non-obvious logic, gotchas, or protocol details
-- Single-use wrapper functions (unnecessary abstraction)
-- Defensive guards on internal code
-- Breaking established codebase patterns
+```
+subagent_type: code-reviewer
+prompt: |
+  You are reviewing an Elixir/OTP + POSIX shell codebase. Focus ONLY on idioms and architecture.
 
-### 3. Shell Idioms & Tech Debt
+  ## Your scope
 
-#### Structure
+  ### Elixir idioms
+  - `if/else` for boolean dispatch → should be multi-clause functions
+  - `unless` → should be multi-clause with negated match or guard
+  - Nested `case` inside `case` → extract inner match to helper
+  - `cond` matching a single value → use `case` or function heads
+  - `do_x(true/false)` naming → descriptive: `start_daemon(_already_running = true)`
+  - Inline `if x, do: a, else: b` for nil → `maybe_x(nil)` / `maybe_x(val)` pattern
+  - Single-letter vars (except iterators) → descriptive names
 
-| Red Flag | Correct Pattern |
-|----------|-----------------|
-| Monolithic script >150 lines | Split into sourced files under `bin/lib/` |
-| Duplicated logic across functions | Extract shared helpers (`escape_json`, `send_cmd`) |
-| Inline JSON building everywhere | Helper function for JSON construction |
-| Giant `case` dispatch at bottom | Clean `cmd_*` functions, dispatch table |
+  ### Shell idioms
+  - POSIX compliance: no `[[ ]]`, `local`, arrays, `declare`
+  - `printf '%s'` for data output, `echo` only for user messages
+  - Quoting: `"$var"`, `"$(cmd)"` always
+  - Script size >150 lines → split into sourced files under `bin/cli/`
+  - Sourced file organization and section headers
 
-#### POSIX Compliance
+  ### Architecture
+  - God modules >200 lines → extract submodules
+  - DRY violations (same pattern 3+ times) → extract helper
+  - N+1 ETS scans (`:ets.tab2list` then filter → `:ets.match` or `:ets.select`)
+  - Over-fetching (loading all data when only a subset is needed)
+  - Unnecessary abstractions (single-use wrappers)
+  - Separation of concerns: CLI thin, domain in dedicated modules
+  - Store isolation: all ETS ops in Store, not scattered
+  - Provider behaviour: correct implementation of callbacks
 
-| Red Flag | Correct Pattern |
-|----------|-----------------|
-| `[[ ]]` double brackets | `[ ]` single brackets |
-| `local` keyword | No `local` in POSIX sh (use subshell or naming convention) |
-| `echo` for data | `printf '%s' "$val"` for portability |
-| Unquoted `$var` | Always `"$var"`, `"$(cmd)"` |
-| Bashisms (arrays, `declare`) | POSIX alternatives |
+  ## Output format
 
-#### Safety
+  Return findings as a markdown list, grouped by severity:
 
-| Red Flag | Correct Pattern |
-|----------|-----------------|
-| Missing `set -e` | Always `set -e` at top |
-| No `trap` cleanup | `trap cleanup EXIT` for temp files, sockets |
-| `exec` in trapped functions | Regular invocation (exec replaces shell, trap lost) |
-| Unchecked command failures | `cmd || { echo "error" >&2; return 1; }` |
-| Missing quotes around paths | `"$SOCK"`, `"$PIDFILE"` — always quote |
+  ### Critical
+  1) **Issue**: description
+     **Location**: `file:line`
+     **Fix**: solution
 
-```sh
-# BAD — monolithic, unquoted, no cleanup
-start() {
-  nohup $DAEMON > $LOG 2>&1 &
-  pid=$!
-  # 50 more lines...
-}
+  ### Important
+  A) **Issue**: description
+     **Location**: `file:line`
+     **Suggestion**: approach
 
-# GOOD — modular, quoted, proper cleanup
-cmd_start() {
-  if [ -S "$SOCK" ]; then
-    echo "Already running"
-    return 0
-  fi
-  mkdir -p "$(dirname "$SOCK")"
-  nohup "$DAEMON" __daemon__ > "$LOGFILE" 2>&1 &
-  echo "$!" > "$PIDFILE"
-}
+  ### Minor
+  * Nitpick or suggestion
+
+  ### Positive
+  - What's done well
+
+  If no findings in a tier, omit that section. Be specific — cite file:line for every finding.
+
+  ## Diff to review
+
+  <diff>
+  {PASTE FULL DIFF HERE}
+  </diff>
 ```
 
-### 4. Safety & OTP
-- No raw `:ets` calls in modules that should use Store
-- `try/catch` for GenServer.call to dead processes wrapped in `Store.safe_call/2`
-- `@impl true` on all GenServer callbacks
-- `:temporary` restart strategy for fire-and-forget missions
-- No `Process.sleep` in tests where `assert_receive` with monitors works
+#### Agent 3: Completeness & Contracts
 
-### 5. Architecture
-- Separation of concerns (CLI thin, domain in dedicated modules)
-- Elixir god modules split (<200 lines per module)
-- Shell scripts split (<150 lines per file, sourced helpers in `bin/lib/`)
-- No duplicated code across files (extract to shared helpers)
-- ETS operations isolated in Store module
-- Providers implement the behaviour correctly
+```
+subagent_type: code-reviewer
+prompt: |
+  You are reviewing an Elixir/OTP + POSIX shell codebase. Focus ONLY on completeness and contracts.
 
-### 6. Typespecs
+  ## Your scope
 
-| Red Flag | Correct Pattern |
-|----------|-----------------|
-| Missing `@spec` on public API | Add `@spec` on all public client functions |
-| `@spec` on GenServer callbacks | Remove spec, keep `@impl true` |
-| `string()` | `String.t()` |
-| `any()` | `term()` |
-| Missing `@type t` on struct | Add `@type t :: %__MODULE__{}` |
-| `list(type())` | `[type()]` |
+  ### Documentation sync
+  - Does `CLAUDE.md` "Project Structure" match the actual `lib/` and `test/` layout?
+  - Are new modules, files, or features reflected in the structure section?
+  - Are removed/renamed modules cleaned from the structure section?
+  - Shell scripts have section headers and gotcha comments
 
-### 7. Tests
-- Tests written before or alongside implementation
-- Testing public API only, not private functions
-- One assertion focus per test
-- `describe` blocks group by function/feature
-- Shared setup extracted to `test/support/`
-- `assert_receive` with monitors preferred over `Process.sleep`
-- E2E tests (`test_e2e.sh`) for shell CLI integration
+  ### Typespecs
+  - `@spec` on all public client API functions (skip private helpers)
+  - `@type t :: %__MODULE__{}` on all structs
+  - No `@spec` on GenServer callbacks — `@impl true` handles it
+  - Correct types: `String.t()` not `string()`, `term()` not `any()`, `[type()]` not `list(type())`
 
-## Review Output Format
+  ### Test coverage
+  - New public behavior has corresponding tests
+  - Tests cover public API only, not private functions
+  - `describe` blocks group by function/feature
+  - One assertion focus per test
+  - `assert_receive` with monitors preferred over `Process.sleep`
+  - Shared setup extracted to `test/support/` if used across files
+
+  ### Comments
+  - Non-obvious logic has WHY comments (not WHAT)
+  - No commenting obvious/self-documenting code
+  - Shell gotcha comments (quoting edge cases, `set -e` interactions)
+
+  ## Output format
+
+  Return findings as a markdown list, grouped by severity:
+
+  ### Critical
+  1) **Issue**: description
+     **Location**: `file:line`
+     **Fix**: solution
+
+  ### Important
+  A) **Issue**: description
+     **Location**: `file:line`
+     **Suggestion**: approach
+
+  ### Minor
+  * Nitpick or suggestion
+
+  ### Positive
+  - What's done well
+
+  If no findings in a tier, omit that section. Be specific — cite file:line for every finding.
+
+  ## Diff to review
+
+  <diff>
+  {PASTE FULL DIFF HERE}
+  </diff>
+```
+
+### Phase 3: Aggregate
+
+After all 3 agents return, merge their findings:
+
+1. **Merge** all findings into unified tiers (Critical / Important / Minor / Positive)
+2. **Deduplicate** same file:line across agents
+3. **Tag** each finding with source: `[safety]`, `[idioms]`, `[completeness]`
+4. **Cap**: max 5 Critical, 7 Important, 3 Minor (drop lowest-impact excess)
+5. **Verdict**: any Critical or Important → "Needs fixes"; only Minor/Positive → "Clean with suggestions"
+
+### Phase 4: Plan + Critique
+
+**If Critical or Important findings exist:**
+
+1. Build a numbered fix plan:
+   ```
+   1. [severity] file:line — proposed fix
+   2. [severity] file:line — proposed fix
+   ...
+   ```
+
+2. Launch a **`plan-reviewer` agent** with the fix plan and diff stat:
+   ```
+   subagent_type: plan-reviewer
+   prompt: |
+     Review this fix plan for an Elixir/OTP + POSIX shell codebase.
+
+     ## Diff stat
+     {PASTE DIFF STAT}
+
+     ## Fix plan
+     {PASTE NUMBERED FIX PLAN}
+
+     Critique the plan:
+     - Are any fixes over-engineered for the actual problem?
+     - Are there gaps — issues in the diff that the plan misses?
+     - Are any fixes redundant or conflicting?
+     - Would any fix break existing behavior?
+     - Is the priority ordering correct?
+
+     Return:
+     1. Fixes to DROP (over-engineered or unnecessary) with reasoning
+     2. Fixes to ADD (gaps the plan missed) with file:line and description
+     3. Fixes to MODIFY (scope adjustment) with reasoning
+     4. Overall assessment: "Plan is solid" or "Plan needs adjustment"
+   ```
+
+3. **Incorporate critique**: drop over-engineered fixes, add missed gaps, adjust scope
+4. Present the **critique-adjusted plan** to the user
+
+**If only Minor findings**: skip plan-reviewer, present review directly.
+
+### Phase 5: Present
+
+Show the aggregated review to the user:
 
 ```markdown
+## Code Review — {branch name}
+
+**Diff**: {files changed}, {insertions}+, {deletions}-
+
 ### Critical
-1) **Issue**: description
+1) [safety] **Issue**: description
    **Location**: `file:line`
    **Fix**: solution
 
 ### Important
-A) **Issue**: description
+A) [idioms] **Issue**: description
    **Location**: `file:line`
    **Suggestion**: approach
 
 ### Minor
-* Nitpick or suggestion
+* [completeness] Nitpick or suggestion
 
 ### Positive
 - What's done well
 
 ### Verdict
 [ ] Clean - ready for `/pr`
-[ ] Needs fixes - see plan below
+[x] Needs fixes - see plan below
+
+---
+
+## Fix Plan (critique-adjusted)
+
+1. [Critical] `file:line` — fix description
+2. [Important] `file:line` — fix description
+...
+
+*Plan reviewed by plan-reviewer. Dropped N over-engineered fixes, added M gaps.*
 ```
 
-## Checklists
+### Phase 6: Implement
 
-### Documentation
-- [ ] `CLAUDE.md` "Project Structure" matches actual layout
-- [ ] New modules listed in structure
-- [ ] Removed modules cleaned from structure
+After user approves the plan:
 
-### Elixir Style
-- [ ] No `if/else` for boolean dispatch (use multi-clause)
-- [ ] No `unless` (use multi-clause with negated match)
-- [ ] No nested `case` inside `case` (extract to helper)
-- [ ] No inline `if` for nil checks (use `maybe_x/2` pattern)
-- [ ] No god modules >200 lines
-- [ ] No duplicated code across files
-- [ ] Descriptive variable names (no single-letter except iterators)
-
-### Shell
-- [ ] POSIX `sh` compatible (no bashisms)
-- [ ] All variables quoted (`"$var"`)
-- [ ] `printf` for data output (not `echo`)
-- [ ] Scripts <150 lines (split into `bin/lib/`)
-- [ ] No duplicated logic across functions
-- [ ] `set -e` at top
-- [ ] `trap` cleanup for temp resources
-- [ ] No `exec` in trapped functions
-- [ ] Descriptive function names (`cmd_*` pattern)
-
-### OTP & Safety
-- [ ] `@impl true` on all GenServer callbacks
-- [ ] No raw `:ets` calls (use Store)
-- [ ] Dead process calls wrapped in safe_call
-- [ ] `:temporary` restart for missions
-- [ ] No `Process.sleep` where monitors work
-
-### Typespecs
-- [ ] `@spec` on public client API functions
-- [ ] `@type t` on all structs
-- [ ] `mix dialyzer` passes
-- [ ] Correct types (String.t(), term(), pid(), etc.)
-
-### Tests
-- [ ] `mix test` passes
-- [ ] `mix smoke` passes
-- [ ] No testing of private functions
-- [ ] `describe` blocks for grouping
-- [ ] Shared setup in `test/support/`
+1. **Enter plan mode** with the fix plan
+2. Implement fixes in plan order
+3. Run verification:
+   ```bash
+   mix test
+   mix dialyzer
+   mix smoke
+   ```
+4. Report results
 
 ## Pipeline
 
