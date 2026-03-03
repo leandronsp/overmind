@@ -195,6 +195,12 @@ defmodule Overmind.Mission.Store do
     |> Enum.map(fn {{:parent, id}, _} -> id end)
   end
 
+  @spec children_counts() :: %{String.t() => non_neg_integer()}
+  def children_counts do
+    :ets.match_object(@table, {{:parent, :_}, :_})
+    |> Enum.frequencies_by(fn {{:parent, _id}, parent_id} -> parent_id end)
+  end
+
   @spec insert_exit_code(String.t(), non_neg_integer()) :: true
   def insert_exit_code(id, code) do
     :ets.insert(@table, {{:exit_code, id}, code})

@@ -60,6 +60,10 @@ defmodule Overmind do
     end
   end
 
+  defp extract_mission_data({:running, _pid, command, started_at}), do: {command, :running, started_at}
+  defp extract_mission_data({:restarting, _pid, command, started_at}), do: {command, :restarting, started_at}
+  defp extract_mission_data({:exited, status, command, started_at}), do: {command, status, started_at}
+
   defp start_mission(command, provider, type, cwd, name, extra_opts) do
     id = Mission.generate_id()
 
@@ -80,6 +84,10 @@ defmodule Overmind do
     started_at = Application.get_env(:overmind, :started_at, now)
     counts = Store.count_by_status()
 
+    running = Map.get(counts, :running, 0) + Map.get(counts, :restarting, 0)
+    stopped = Map.get(counts, :stopped, 0)
+    crashed = Map.get(counts, :crashed, 0)
+
     %{
       pid: System.pid(),
       node: to_string(node()),
@@ -88,10 +96,10 @@ defmodule Overmind do
       process_count: length(Process.list()),
       ets_table_count: length(:ets.all()),
       missions: %{
-        running: Map.get(counts, :running, 0) + Map.get(counts, :restarting, 0),
-        stopped: Map.get(counts, :stopped, 0),
-        crashed: Map.get(counts, :crashed, 0),
-        total: length(Store.list_all())
+        running: running,
+        stopped: stopped,
+        crashed: crashed,
+        total: Enum.sum(Map.values(counts))
       }
     }
   end
@@ -99,6 +107,7 @@ defmodule Overmind do
   @spec ps() :: [map()]
   def ps do
     now = System.system_time(:second)
+    counts = Store.children_counts()
 
     Store.list_all()
     |> Enum.map(fn {id, _pid, command, status, started_at} ->
@@ -112,7 +121,7 @@ defmodule Overmind do
         attached: Store.lookup_attached(id),
         restart_count: Store.lookup_restart_count(id),
         parent: Store.lookup_parent(id),
-        children: length(Store.find_children(id)),
+        children: Map.get(counts, id, 0),
         uptime: now - started_at
       }
     end)
@@ -133,8 +142,31 @@ defmodule Overmind do
   def children(id) do
     resolved = Store.resolve_id(id)
     child_ids = Store.find_children(resolved)
-    missions = ps()
-    Enum.filter(missions, fn m -> m.id in child_ids end)
+
+    now = System.system_time(:second)
+    counts = Store.children_counts()
+
+    child_ids
+    |> Enum.map(&Store.lookup/1)
+    |> Enum.zip(child_ids)
+    |> Enum.reject(fn {result, _id} -> result == :not_found end)
+    |> Enum.map(fn {result, child_id} ->
+      {command, status, started_at} = extract_mission_data(result)
+
+      %{
+        id: child_id,
+        name: Store.lookup_name(child_id),
+        command: command,
+        status: status,
+        type: Store.lookup_type(child_id),
+        session_id: Store.lookup_session_id(child_id),
+        attached: Store.lookup_attached(child_id),
+        restart_count: Store.lookup_restart_count(child_id),
+        parent: Store.lookup_parent(child_id),
+        children: Map.get(counts, child_id, 0),
+        uptime: now - started_at
+      }
+    end)
   end
 
   @spec wait(String.t(), non_neg_integer() | nil) :: {:ok, map()} | {:error, :not_found | :timeout}

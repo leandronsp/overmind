@@ -158,6 +158,8 @@ defmodule Overmind.Mission.Client do
           {:exited, status, _, _} ->
             {:ok, %{status: status, exit_code: Store.lookup_exit_code(id)}}
 
+          # GenServer died but ETS doesn't show :exited — happens when
+          # process was killed externally or ETS was already cleaned up
           _ ->
             {:ok, %{status: :crashed, exit_code: Store.lookup_exit_code(id)}}
         end
