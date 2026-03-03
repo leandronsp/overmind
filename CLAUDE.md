@@ -15,7 +15,8 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │   ├── overmind               # Shell script CLI (dispatch + source)
 │   └── cli/
 │       ├── helpers.sh         # JSON helpers (escape, send_cmd, extract_ok, maybe_json_*)
-│       ├── commands.sh        # All cmd_* functions (run, ps, logs, attach, etc.)
+│       ├── daemon.sh          # Daemon lifecycle (start, shutdown)
+│       ├── commands.sh        # Mission cmd_* functions (run, ps, logs, attach, etc.)
 │       └── orchestration.sh  # Orchestration commands (wait)
 ├── lib/
 │   ├── overmind.ex              # Public API (run, ps, logs, stop, kill, wait, result, children)

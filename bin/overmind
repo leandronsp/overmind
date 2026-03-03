@@ -10,6 +10,7 @@ PIDFILE="$HOME/.overmind/daemon.pid"
 LOGFILE="$HOME/.overmind/daemon.log"
 
 . "$BASEDIR/cli/helpers.sh"
+. "$BASEDIR/cli/daemon.sh"
 . "$BASEDIR/cli/commands.sh"
 . "$BASEDIR/cli/orchestration.sh"
 . "$BASEDIR/cli/status.sh"
