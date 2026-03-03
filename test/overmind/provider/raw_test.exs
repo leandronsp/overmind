@@ -3,13 +3,17 @@ defmodule Overmind.Provider.RawTest do
 
   alias Overmind.Provider.Raw
 
-  describe "build_command/1" do
+  describe "build_command/2" do
     test "wraps command with sh -c" do
       assert Raw.build_command("echo hello") == "sh -c 'echo hello'"
     end
 
     test "escapes single quotes" do
       assert Raw.build_command("echo 'hi'") == "sh -c 'echo '\\''hi'\\'''"
+    end
+
+    test "ignores allowed_tools" do
+      assert Raw.build_command("echo hello", allowed_tools: "Bash") == "sh -c 'echo hello'"
     end
   end
 

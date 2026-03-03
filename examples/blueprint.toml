@@ -1,0 +1,34 @@
+# Example Overmind Blueprint — M3 Declarative Config
+#
+# Run with: overmind apply examples/blueprint.toml
+# List agents: overmind agents examples/blueprint.toml
+
+# --- Fetch stage ---
+[agents.fetcher]
+command = "echo '[fetcher] Downloading data...'"
+provider = "raw"
+type = "task"
+cwd = "/tmp"
+
+# --- Validate stage (depends on fetcher) ---
+[agents.validator]
+command = "echo '[validator] Validating data...'"
+provider = "raw"
+type = "task"
+cwd = "/tmp"
+depends_on = ["fetcher"]
+
+# --- Process stage (depends on validator) ---
+[agents.processor]
+command = "echo '[processor] Processing data...'"
+provider = "raw"
+type = "task"
+restart_policy = "on-failure"
+depends_on = ["validator"]
+
+# --- Report stage (depends on processor) ---
+[agents.reporter]
+command = "echo '[reporter] Generating report...'"
+provider = "raw"
+type = "task"
+depends_on = ["processor"]

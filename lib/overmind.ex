@@ -23,6 +23,7 @@ defmodule Overmind do
     backoff_ms = Keyword.get(opts, :backoff_ms, 1000)
     activity_timeout = Keyword.get(opts, :activity_timeout, 0)
     parent = Keyword.get(opts, :parent)
+    allowed_tools = Keyword.get(opts, :allowed_tools)
 
     with :ok <- validate_type(type),
          :ok <- validate_command(command, type),
@@ -34,7 +35,8 @@ defmodule Overmind do
         max_seconds: max_seconds,
         backoff_ms: backoff_ms,
         activity_timeout: activity_timeout,
-        parent: resolved_parent
+        parent: resolved_parent,
+        allowed_tools: allowed_tools
       )
     end
   end
@@ -94,6 +96,29 @@ defmodule Overmind do
         total: length(Store.list_all())
       }
     }
+  end
+
+  @spec top() :: [map()]
+  def top do
+    now = System.system_time(:second)
+    resource_map = Store.collect_resource_usage()
+
+    Store.list_all()
+    |> Enum.map(fn {id, pid, command, status, started_at} ->
+      uptime = max(now - started_at, 1)
+      {cpu, mem} = Map.get(resource_map, id, {0.0, 0})
+      log_bytes = log_bytes_for(id, pid, status)
+
+      %{
+        id: id,
+        name: Store.lookup_name(id),
+        status: status,
+        cpu_percent: cpu,
+        memory_kb: mem,
+        output_rate: log_bytes / uptime,
+        command: command
+      }
+    end)
   end
 
   @spec ps() :: [map()]
@@ -177,6 +202,18 @@ defmodule Overmind do
     id |> Store.resolve_id() |> Client.kill_cascade()
   end
 
+  defp log_bytes_for(id, pid, :running) do
+    case Store.safe_call(pid, :get_logs) do
+      {:ok, logs} -> byte_size(logs)
+      :dead -> byte_size(Store.stored_logs(id))
+    end
+  end
+
+  defp log_bytes_for(id, _pid, _status) do
+    byte_size(Store.stored_logs(id))
+  end
+
   defdelegate format_ps(missions), to: Overmind.Formatter
   defdelegate format_ps_tree(missions), to: Overmind.Formatter
+  defdelegate format_top(entries), to: Overmind.Formatter
 end

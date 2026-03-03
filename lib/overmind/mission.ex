@@ -17,6 +17,7 @@ defmodule Overmind.Mission do
     :restart_timer_ref,
     :last_activity_at,
     :activity_timer_ref,
+    :allowed_tools,
     type: :task,
     logs: "",
     line_buffer: "",
@@ -57,7 +58,8 @@ defmodule Overmind.Mission do
           restart_timer_ref: reference() | nil,
           activity_timeout: non_neg_integer(),
           last_activity_at: integer() | nil,
-          activity_timer_ref: reference() | nil
+          activity_timer_ref: reference() | nil,
+          allowed_tools: String.t() | nil
         }
 
   @spec generate_id() :: String.t()
@@ -89,6 +91,7 @@ defmodule Overmind.Mission do
     backoff_ms = Keyword.get(opts, :backoff_ms, 1000)
     activity_timeout = Keyword.get(opts, :activity_timeout, 0)
     parent = Keyword.get(opts, :parent)
+    allowed_tools = Keyword.get(opts, :allowed_tools)
 
     GenServer.start_link(__MODULE__, %{
       id: id,
@@ -102,7 +105,8 @@ defmodule Overmind.Mission do
       max_seconds: max_seconds,
       backoff_ms: backoff_ms,
       activity_timeout: activity_timeout,
-      parent: parent
+      parent: parent,
+      allowed_tools: allowed_tools
     })
   end
 
@@ -117,8 +121,9 @@ defmodule Overmind.Mission do
     max_seconds = Map.get(args, :max_seconds, 60)
     backoff_ms = Map.get(args, :backoff_ms, 1000)
     activity_timeout = Map.get(args, :activity_timeout, 0)
+    allowed_tools = Map.get(args, :allowed_tools)
 
-    port_command = build_port_command(type, provider, command)
+    port_command = build_port_command(type, provider, command, nil, allowed_tools)
     port_opts = [:binary, :exit_status, :stderr_to_stdout] ++ build_env(id, name) ++ maybe_cd(cwd)
     port = Port.open({:spawn, port_command}, port_opts)
     {:os_pid, os_pid} = Port.info(port, :os_pid)
@@ -151,7 +156,8 @@ defmodule Overmind.Mission do
        backoff_ms: backoff_ms,
        activity_timeout: activity_timeout,
        last_activity_at: last_activity_at,
-       activity_timer_ref: activity_timer_ref
+       activity_timer_ref: activity_timer_ref,
+       allowed_tools: allowed_tools
      }}
   end
 
@@ -314,7 +320,7 @@ defmodule Overmind.Mission do
     marker = "--- restart ##{count} at #{timestamp} ---\n"
     now_mono = System.monotonic_time(:millisecond)
 
-    port_command = build_port_command(state.type, state.provider, state.command, state.session_id)
+    port_command = build_port_command(state.type, state.provider, state.command, state.session_id, state.allowed_tools)
     port_opts = [:binary, :exit_status, :stderr_to_stdout] ++ build_env(state.id, state.name) ++ maybe_cd(state.cwd)
     port = Port.open({:spawn, port_command}, port_opts)
     {:os_pid, os_pid} = Port.info(port, :os_pid)
@@ -403,16 +409,12 @@ defmodule Overmind.Mission do
 
   defp send_initial_prompt(_, _, _, _), do: :ok
 
-  defp build_port_command(type, provider, command) do
-    build_port_command(type, provider, command, nil)
+  defp build_port_command(:session, provider, _command, session_id, allowed_tools) do
+    provider.build_session_command(session_id: session_id, allowed_tools: allowed_tools)
   end
 
-  defp build_port_command(:session, provider, _command, session_id) do
-    provider.build_session_command(session_id: session_id)
-  end
-
-  defp build_port_command(:task, provider, command, _session_id) do
-    provider.build_command(command) <> " < /dev/null"
+  defp build_port_command(:task, provider, command, _session_id, allowed_tools) do
+    provider.build_command(command, allowed_tools: allowed_tools) <> " < /dev/null"
   end
 
   # Restart policy dispatch: manual stop always wins, then policy, then budget.

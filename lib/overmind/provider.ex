@@ -11,7 +11,7 @@ defmodule Overmind.Provider do
           | {:plain, String.t()}
           | {:ignored, map()}
 
-  @callback build_command(String.t()) :: String.t()
+  @callback build_command(String.t(), keyword()) :: String.t()
   @callback build_session_command(keyword()) :: String.t()
   @callback build_input_message(String.t()) :: String.t()
   @callback parse_line(String.t()) :: {event(), map() | nil}

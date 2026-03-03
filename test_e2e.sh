@@ -32,7 +32,7 @@ assert_eq() {
 }
 
 extract_id() {
-  echo "$1" | awk '{print $NF}'
+  echo "$1" | awk '{print $3}'
 }
 
 echo -e "${YELLOW}=== Building ===${NC}"

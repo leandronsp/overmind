@@ -16,6 +16,12 @@ defmodule Overmind.Formatter do
     Enum.join([header() | lines], "\n") <> "\n"
   end
 
+  @spec format_top([map()]) :: String.t()
+  def format_top(entries) do
+    lines = Enum.map(entries, &format_top_line/1)
+    Enum.join([top_header() | lines], "\n") <> "\n"
+  end
+
   # Private helpers
 
   defp header do
@@ -82,6 +88,26 @@ defmodule Overmind.Formatter do
 
   defp truncate_command(cmd) when byte_size(cmd) <= @max_command_len, do: cmd
   defp truncate_command(cmd), do: String.slice(cmd, 0, @max_command_len - 3) <> "..."
+
+  defp top_header do
+    String.pad_trailing("ID", 12) <>
+      String.pad_trailing("NAME", 18) <>
+      String.pad_trailing("STATUS", 14) <>
+      String.pad_trailing("CPU%", 8) <>
+      String.pad_trailing("MEM(KB)", 10) <>
+      String.pad_trailing("OUT/s", 8) <>
+      "COMMAND"
+  end
+
+  defp format_top_line(m) do
+    String.pad_trailing(m.id, 12) <>
+      String.pad_trailing(m[:name] || "", 18) <>
+      String.pad_trailing(Atom.to_string(m.status), 14) <>
+      String.pad_trailing(:erlang.float_to_binary(m.cpu_percent * 1.0, [{:decimals, 1}]), 8) <>
+      String.pad_trailing(Integer.to_string(m.memory_kb), 10) <>
+      String.pad_trailing(:erlang.float_to_binary(m.output_rate * 1.0, [{:decimals, 1}]), 8) <>
+      truncate_command(m.command)
+  end
 
   defp format_uptime(seconds) when seconds < 60, do: "#{seconds}s"
   defp format_uptime(seconds) when seconds < 3600, do: "#{div(seconds, 60)}m"
