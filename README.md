@@ -1,14 +1,14 @@
-<p align="center">
-  <img src="assets/cover.jpg" alt="Aerial view of tree branches spreading like a mycelium network" width="600" />
-  <br />
-  <sub>Photo by <a href="https://unsplash.com/@photoken123">Ian</a> on <a href="https://unsplash.com/photos/an-aerial-view-of-a-tree-in-a-forest-oiiTisRnAQk">Unsplash</a></sub>
-</p>
-
 # Overmind
 
 Kubernetes for AI Agents.
 
 A local-first runtime that treats AI agents as supervised processes with scheduling, observability, and self-healing. Think k9s for AI agent sessions.
+
+<p align="center">
+  <img src="assets/cover.jpg" alt="Aerial view of tree branches spreading like a mycelium network" width="400" />
+  <br />
+  <sub>Photo by <a href="https://unsplash.com/@photoken123">Ian</a> on <a href="https://unsplash.com/photos/an-aerial-view-of-a-tree-in-a-forest-oiiTisRnAQk">Unsplash</a></sub>
+</p>
 
 ### The Mycelium Network
 
