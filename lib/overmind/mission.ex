@@ -111,13 +111,11 @@ defmodule Overmind.Mission do
   # Port is opened eagerly in init — the mission is visible in ETS (via ps)
   # immediately, before start_link returns to the caller.
   @impl true
-  def init(%{id: id, command: command, provider: provider, type: type, cwd: cwd, name: name} = args) do
-    restart_policy = Map.get(args, :restart_policy, :never)
-    max_restarts = Map.get(args, :max_restarts, 5)
-    max_seconds = Map.get(args, :max_seconds, 60)
-    backoff_ms = Map.get(args, :backoff_ms, 1000)
-    activity_timeout = Map.get(args, :activity_timeout, 0)
-
+  def init(%{
+    id: id, command: command, provider: provider, type: type, cwd: cwd, name: name,
+    restart_policy: restart_policy, max_restarts: max_restarts, max_seconds: max_seconds,
+    backoff_ms: backoff_ms, activity_timeout: activity_timeout, parent: parent
+  }) do
     port_command = build_port_command(type, provider, command)
     port_opts = [:binary, :exit_status, :stderr_to_stdout] ++ build_env(id, name) ++ maybe_cd(cwd)
     port = Port.open({:spawn, port_command}, port_opts)
@@ -128,7 +126,7 @@ defmodule Overmind.Mission do
     Store.insert_name(id, name)
     Store.insert_restart_policy(id, restart_policy)
     maybe_store_cwd(id, cwd)
-    maybe_store_parent(id, Map.get(args, :parent))
+    maybe_store_parent(id, parent)
     send_initial_prompt(type, port, provider, command)
 
     activity_timer_ref = schedule_activity_check(activity_timeout)
@@ -265,18 +263,7 @@ defmodule Overmind.Mission do
     cancel_timer(state.activity_timer_ref)
     Store.insert_exit_code(state.id, code)
     status = exit_status(state.stopping, code)
-
-    case should_restart?(state, status) do
-      true ->
-        delay = compute_backoff(state)
-        timer_ref = Process.send_after(self(), :restart, delay)
-        Store.insert(state.id, {self(), state.command, :restarting, state.started_at})
-        {:noreply, %{state | restart_timer_ref: timer_ref, activity_timer_ref: nil}}
-
-      false ->
-        Store.insert(state.id, {self(), state.command, status, state.started_at})
-        {:stop, :normal, state}
-    end
+    handle_port_exit(should_restart?(state, status), state, status)
   end
 
   # Stall detection: periodic timer fires to check if the process has produced
@@ -291,17 +278,7 @@ defmodule Overmind.Mission do
   def handle_info(:check_activity, state) do
     now = System.system_time(:second)
     elapsed = now - (state.last_activity_at || now)
-
-    case elapsed >= state.activity_timeout do
-      true ->
-        System.cmd("kill", ["-9", Integer.to_string(state.os_pid)])
-        marker = "--- killed: no activity for #{elapsed}s ---\n"
-        {:noreply, %{state | logs: state.logs <> marker, activity_timer_ref: nil}}
-
-      false ->
-        ref = schedule_activity_check(state.activity_timeout)
-        {:noreply, %{state | activity_timer_ref: ref}}
-    end
+    handle_activity_check(elapsed >= state.activity_timeout, state, elapsed)
   end
 
   # Re-open the Port with the same command. For sessions, passes session_id
@@ -345,10 +322,37 @@ defmodule Overmind.Mission do
 
   @impl true
   def terminate(_reason, state) do
-    Store.persist_after_exit(state.id, state.logs, state.raw_events)
+    # Skip persist if mission was already cleaned up (kill path)
+    case Store.lookup(state.id) do
+      :not_found -> :ok
+      _ -> Store.persist_after_exit(state.id, state.logs, state.raw_events)
+    end
   end
 
   # --- Private helpers ---
+
+  defp handle_port_exit(_should_restart = true, state, _status) do
+    delay = compute_backoff(state)
+    timer_ref = Process.send_after(self(), :restart, delay)
+    Store.insert(state.id, {self(), state.command, :restarting, state.started_at})
+    {:noreply, %{state | restart_timer_ref: timer_ref, activity_timer_ref: nil}}
+  end
+
+  defp handle_port_exit(_should_restart = false, state, status) do
+    Store.insert(state.id, {self(), state.command, status, state.started_at})
+    {:stop, :normal, state}
+  end
+
+  defp handle_activity_check(_stalled = true, state, elapsed) do
+    System.cmd("kill", ["-9", Integer.to_string(state.os_pid)])
+    marker = "--- killed: no activity for #{elapsed}s ---\n"
+    {:noreply, %{state | logs: state.logs <> marker, activity_timer_ref: nil}}
+  end
+
+  defp handle_activity_check(_stalled = false, state, _elapsed) do
+    ref = schedule_activity_check(state.activity_timeout)
+    {:noreply, %{state | activity_timer_ref: ref}}
+  end
 
   # Flush any remaining partial line when the port exits
   defp flush_line_buffer("", _provider), do: {"", []}

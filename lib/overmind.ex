@@ -60,6 +60,22 @@ defmodule Overmind do
     end
   end
 
+  defp build_mission_map(id, command, status, started_at, counts, now) do
+    %{
+      id: id,
+      name: Store.lookup_name(id),
+      command: command,
+      status: status,
+      type: Store.lookup_type(id),
+      session_id: Store.lookup_session_id(id),
+      attached: Store.lookup_attached(id),
+      restart_count: Store.lookup_restart_count(id),
+      parent: Store.lookup_parent(id),
+      children: Map.get(counts, id, 0),
+      uptime: now - started_at
+    }
+  end
+
   defp extract_mission_data({:running, _pid, command, started_at}), do: {command, :running, started_at}
   defp extract_mission_data({:restarting, _pid, command, started_at}), do: {command, :restarting, started_at}
   defp extract_mission_data({:exited, status, command, started_at}), do: {command, status, started_at}
@@ -111,19 +127,7 @@ defmodule Overmind do
 
     Store.list_all()
     |> Enum.map(fn {id, _pid, command, status, started_at} ->
-      %{
-        id: id,
-        name: Store.lookup_name(id),
-        command: command,
-        status: status,
-        type: Store.lookup_type(id),
-        session_id: Store.lookup_session_id(id),
-        attached: Store.lookup_attached(id),
-        restart_count: Store.lookup_restart_count(id),
-        parent: Store.lookup_parent(id),
-        children: Map.get(counts, id, 0),
-        uptime: now - started_at
-      }
+      build_mission_map(id, command, status, started_at, counts, now)
     end)
   end
 
@@ -152,20 +156,7 @@ defmodule Overmind do
     |> Enum.reject(fn {result, _id} -> result == :not_found end)
     |> Enum.map(fn {result, child_id} ->
       {command, status, started_at} = extract_mission_data(result)
-
-      %{
-        id: child_id,
-        name: Store.lookup_name(child_id),
-        command: command,
-        status: status,
-        type: Store.lookup_type(child_id),
-        session_id: Store.lookup_session_id(child_id),
-        attached: Store.lookup_attached(child_id),
-        restart_count: Store.lookup_restart_count(child_id),
-        parent: Store.lookup_parent(child_id),
-        children: Map.get(counts, child_id, 0),
-        uptime: now - started_at
-      }
+      build_mission_map(child_id, command, status, started_at, counts, now)
     end)
   end
 

@@ -17,6 +17,7 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │       ├── helpers.sh         # JSON helpers (escape, send_cmd, extract_ok, maybe_json_*)
 │       ├── daemon.sh          # Daemon lifecycle (start, shutdown)
 │       ├── commands.sh        # Mission cmd_* functions (run, ps, logs, attach, etc.)
+│       ├── status.sh          # Daemon health and live monitoring (status, monitor)
 │       └── orchestration.sh  # Orchestration commands (wait)
 ├── lib/
 │   ├── overmind.ex              # Public API (run, ps, logs, stop, kill, wait, result, children)
@@ -169,7 +170,7 @@ Typespecs serve as deterministic constraints on LLM-generated code — the type 
 - Descriptive names: `cmd_run`, `send_cmd`, `extract_ok`
 
 ### Structure
-- Scripts <150 lines — split into sourced files under `bin/lib/`
+- Scripts <150 lines — split into sourced files under `bin/cli/`
 - Helpers section at top (escape_json, send_cmd, extract_ok)
 - Commands section below (cmd_start, cmd_run, cmd_ps, ...)
 - Dispatch at bottom

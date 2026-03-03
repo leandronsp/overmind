@@ -115,7 +115,12 @@ cmd_info() {
     echo "Error: $err" >&2
     return 1
   fi
-  printf '%s\n' "$response" | sed 's/.*"ok"://' | sed 's/}$//'
+  inner=$(printf '%s' "$response" | sed 's/^{"ok"://' | sed 's/}$//')
+  if [ "$inner" = "{" ]; then
+    printf '{}\n'
+  else
+    printf '%s\n' "$inner"
+  fi
 }
 
 cmd_logs() {
@@ -136,7 +141,12 @@ cmd_result() {
   fi
 
   # Response: {"ok":{"type":"result","result":"...","cost_usd":N,...}} or {"ok":{}}
-  printf '%s\n' "$response" | sed 's/^{"ok"://' | sed 's/}$//'
+  inner=$(printf '%s' "$response" | sed 's/^{"ok"://' | sed 's/}$//')
+  if [ "$inner" = "{" ]; then
+    printf '{}\n'
+  else
+    printf '%s\n' "$inner"
+  fi
 }
 
 cmd_stop() { simple_id_cmd "stop" "$1" "Stopped"; }
@@ -212,7 +222,10 @@ cmd_attach() {
   fi
 
   # Unpause on ALL exit paths: Ctrl+C, Claude crash, normal exit
-  trap "printf '{\"cmd\":\"unpause\",\"args\":{\"id\":\"$escaped\"}}\\n' | nc -U \"$SOCK\" > /dev/null 2>&1" EXIT
+  _cleanup_attach() {
+    printf '{"cmd":"unpause","args":{"id":"%s"}}\n' "$escaped" | nc -U "$SOCK" > /dev/null 2>&1
+  }
+  trap _cleanup_attach EXIT
 
   # Claude session must run in the mission's CWD for --resume to find its state
   if [ -n "$cwd" ] && [ "$cwd" != "null" ]; then
