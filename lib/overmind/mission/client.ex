@@ -16,6 +16,19 @@ defmodule Overmind.Mission.Client do
     end
   end
 
+  @spec get_result(String.t()) :: {:ok, map()} | {:error, :not_found | :not_finished}
+  def get_result(id) do
+    case Store.lookup(id) do
+      {:exited, _, _, _} ->
+        events = Store.stored_raw_events(id)
+        {:ok, extract_result(events)}
+
+      {:running, _, _, _} -> {:error, :not_finished}
+      {:restarting, _, _, _} -> {:error, :not_finished}
+      :not_found -> {:error, :not_found}
+    end
+  end
+
   @spec get_raw_events(String.t()) :: {:ok, [map()]} | {:error, :not_found}
   def get_raw_events(id) do
     case Store.lookup(id) do
@@ -43,6 +56,21 @@ defmodule Overmind.Mission.Client do
       {:restarting, pid, _, _} -> kill_running(pid, id)
       {:exited, _, _, _} -> Store.cleanup(id)
       :not_found -> {:error, :not_found}
+    end
+  end
+
+  @spec kill_cascade(String.t()) :: :ok | {:error, :not_found}
+  def kill_cascade(id) do
+    case Store.lookup(id) do
+      :not_found ->
+        {:error, :not_found}
+
+      _ ->
+        # Depth-first: kill children before parent
+        Store.find_children(id)
+        |> Enum.each(&kill_cascade/1)
+
+        kill(id)
     end
   end
 
@@ -77,11 +105,29 @@ defmodule Overmind.Mission.Client do
     case Store.lookup(id) do
       :not_found -> {:error, :not_found}
       {:exited, _, _, _} -> {:error, :not_running}
+      {:restarting, _, _, _} -> {:error, :not_running}
       {:running, pid, _, _} ->
         case Store.safe_call(pid, :unpause) do
           {:ok, :ok} -> :ok
           :dead -> {:error, :not_running}
         end
+    end
+  end
+
+  @spec wait(String.t(), non_neg_integer() | nil) :: {:ok, map()} | {:error, :not_found | :timeout}
+  def wait(id, timeout \\ nil) do
+    case Store.lookup(id) do
+      {:exited, status, _, _} ->
+        {:ok, %{status: status, exit_code: Store.lookup_exit_code(id)}}
+
+      {:running, pid, _, _} ->
+        wait_for_process(pid, id, timeout)
+
+      {:restarting, pid, _, _} ->
+        wait_for_process(pid, id, timeout)
+
+      :not_found ->
+        {:error, :not_found}
     end
   end
 
@@ -104,6 +150,33 @@ defmodule Overmind.Mission.Client do
 
   # Private helpers
 
+  defp wait_for_process(pid, id, timeout) do
+    ref = Process.monitor(pid)
+
+    receive do
+      {:DOWN, ^ref, :process, ^pid, _} ->
+        case Store.lookup(id) do
+          {:exited, status, _, _} ->
+            {:ok, %{status: status, exit_code: Store.lookup_exit_code(id)}}
+
+          # ETS cleaned up (kill path) — user intentionally removed it
+          :not_found ->
+            {:ok, %{status: :stopped, exit_code: nil}}
+
+          # GenServer died but ETS doesn't show :exited — external kill
+          _ ->
+            {:ok, %{status: :crashed, exit_code: Store.lookup_exit_code(id)}}
+        end
+    after
+      timeout_ms(timeout) ->
+        Process.demonitor(ref, [:flush])
+        {:error, :timeout}
+    end
+  end
+
+  defp timeout_ms(nil), do: :infinity
+  defp timeout_ms(ms), do: ms
+
   defp build_info(id, command, status, started_at, os_pid) do
     %{
       id: id,
@@ -116,7 +189,9 @@ defmodule Overmind.Mission.Client do
       cwd: Store.lookup_cwd(id),
       restart_policy: Store.lookup_restart_policy(id),
       restart_count: Store.lookup_restart_count(id),
-      last_activity: Store.lookup_last_activity(id)
+      last_activity: Store.lookup_last_activity(id),
+      parent: Store.lookup_parent(id),
+      children: length(Store.find_children(id))
     }
   end
 
@@ -146,6 +221,14 @@ defmodule Overmind.Mission.Client do
       {:ok, os_pid} -> os_pid
       :dead -> nil
     end
+  end
+
+  # Extract the last "result" raw_event from a mission's event list.
+  # Returns the raw JSON map (with type, result, cost_usd, etc.) or empty map.
+  defp extract_result(events) do
+    events
+    |> Enum.reverse()
+    |> Enum.find(%{}, &(&1["type"] == "result"))
   end
 
   # Paused = human attached via CLI (attach command). Reject programmatic

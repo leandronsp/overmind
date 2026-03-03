@@ -9,11 +9,12 @@ defmodule Overmind.APIServerTest do
   end
 
   describe "dispatch/1" do
-    test "run returns mission id" do
+    test "run returns id and name" do
       result = APIServer.dispatch(%{"cmd" => "run", "args" => %{"command" => "sleep 60"}})
-      assert %{"ok" => id} = result
+      assert %{"ok" => %{"id" => id, "name" => name}} = result
       assert is_binary(id)
       assert String.length(id) == 8
+      assert is_binary(name)
     end
 
     test "run with session type" do
@@ -23,7 +24,7 @@ defmodule Overmind.APIServerTest do
           "args" => %{"command" => "", "type" => "session"}
         })
 
-      assert %{"ok" => id} = result
+      assert %{"ok" => %{"id" => id}} = result
       assert String.length(id) == 8
     end
 
@@ -34,7 +35,7 @@ defmodule Overmind.APIServerTest do
           "args" => %{"command" => "sleep 60", "name" => "my-agent"}
         })
 
-      assert %{"ok" => id} = result
+      assert %{"ok" => %{"id" => id, "name" => "my-agent"}} = result
       assert Overmind.Mission.Store.lookup_name(id) == "my-agent"
     end
 
@@ -45,7 +46,7 @@ defmodule Overmind.APIServerTest do
           "args" => %{"command" => "pwd", "cwd" => "/tmp"}
         })
 
-      assert %{"ok" => id} = result
+      assert %{"ok" => %{"id" => id}} = result
 
       [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
       ref = Process.monitor(pid)
@@ -68,13 +69,57 @@ defmodule Overmind.APIServerTest do
           }
         })
 
-      assert %{"ok" => id} = result
+      assert %{"ok" => %{"id" => id}} = result
       assert Overmind.Mission.Store.lookup_restart_policy(id) == :on_failure
+    end
+
+    test "run with parent passes parent to mission" do
+      {:ok, parent_id} = Overmind.run("sleep 60")
+
+      result =
+        APIServer.dispatch(%{
+          "cmd" => "run",
+          "args" => %{"command" => "sleep 60", "parent" => parent_id}
+        })
+
+      assert %{"ok" => %{"id" => child_id}} = result
+      assert Overmind.Mission.Store.lookup_parent(child_id) == parent_id
+    end
+
+    test "run with nonexistent parent returns error" do
+      result =
+        APIServer.dispatch(%{
+          "cmd" => "run",
+          "args" => %{"command" => "sleep 60", "parent" => "nonexist"}
+        })
+
+      assert %{"error" => "parent_not_found"} = result
     end
 
     test "run with empty command returns error" do
       result = APIServer.dispatch(%{"cmd" => "run", "args" => %{"command" => ""}})
       assert %{"error" => "empty_command"} = result
+    end
+
+    test "ps with tree returns formatted tree" do
+      {:ok, parent_id} = Overmind.run("sleep 60")
+      {:ok, _child_id} = Overmind.run("sleep 60", parent: parent_id)
+      Process.sleep(50)
+
+      result = APIServer.dispatch(%{"cmd" => "ps", "args" => %{"tree" => true}})
+      assert %{"ok" => text} = result
+      assert text =~ "ID"
+      assert text =~ parent_id
+    end
+
+    test "ps with children returns only children" do
+      {:ok, parent_id} = Overmind.run("sleep 60")
+      {:ok, child_id} = Overmind.run("sleep 60", parent: parent_id)
+      Process.sleep(50)
+
+      result = APIServer.dispatch(%{"cmd" => "ps", "args" => %{"children" => parent_id}})
+      assert %{"ok" => text} = result
+      assert text =~ child_id
     end
 
     test "ps returns formatted text" do
@@ -85,6 +130,29 @@ defmodule Overmind.APIServerTest do
       assert %{"ok" => text} = result
       assert text =~ "ID"
       assert text =~ "sleep 60"
+    end
+
+    test "wait returns status and exit_code for exited mission" do
+      {:ok, id} = Overmind.run("true")
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+
+      result = APIServer.dispatch(%{"cmd" => "wait", "args" => %{"id" => id}})
+      assert %{"ok" => %{"status" => "stopped", "exit_code" => 0}} = result
+    end
+
+    test "wait returns error for unknown mission" do
+      result = APIServer.dispatch(%{"cmd" => "wait", "args" => %{"id" => "nonexist"}})
+      assert %{"error" => "not_found"} = result
+    end
+
+    test "wait with timeout returns error" do
+      {:ok, id} = Overmind.run("sleep 60")
+      Process.sleep(50)
+
+      result = APIServer.dispatch(%{"cmd" => "wait", "args" => %{"id" => id, "timeout" => 100}})
+      assert %{"error" => "timeout"} = result
     end
 
     test "info returns mission info with os_pid" do
@@ -119,6 +187,33 @@ defmodule Overmind.APIServerTest do
       assert %{"error" => "not_found"} = result
     end
 
+    test "result returns structured data for completed mission" do
+      script = ~s(sh -c 'echo "{\\\"type\\\":\\\"result\\\",\\\"result\\\":\\\"Done\\\",\\\"duration_ms\\\":100,\\\"cost_usd\\\":0.01,\\\"is_error\\\":false}"')
+
+      {:ok, id} = Overmind.run(script, provider: Overmind.Provider.TestClaude)
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
+
+      result = APIServer.dispatch(%{"cmd" => "result", "args" => %{"id" => id}})
+      assert %{"ok" => data} = result
+      assert data["result"] == "Done"
+      assert data["cost_usd"] == 0.01
+    end
+
+    test "result returns error for running mission" do
+      {:ok, id} = Overmind.run("sleep 60")
+      Process.sleep(50)
+
+      result = APIServer.dispatch(%{"cmd" => "result", "args" => %{"id" => id}})
+      assert %{"error" => "not_finished"} = result
+    end
+
+    test "result returns error for unknown mission" do
+      result = APIServer.dispatch(%{"cmd" => "result", "args" => %{"id" => "nonexist"}})
+      assert %{"error" => "not_found"} = result
+    end
+
     test "stop returns ok" do
       {:ok, id} = Overmind.run("sleep 60")
       Process.sleep(50)
@@ -133,6 +228,19 @@ defmodule Overmind.APIServerTest do
 
       result = APIServer.dispatch(%{"cmd" => "kill", "args" => %{"id" => id}})
       assert %{"ok" => true} = result
+    end
+
+    test "kill with cascade removes parent and children" do
+      {:ok, parent_id} = Overmind.run("sleep 60")
+      {:ok, child_id} = Overmind.run("sleep 60", parent: parent_id)
+      Process.sleep(50)
+
+      result = APIServer.dispatch(%{"cmd" => "kill", "args" => %{"id" => parent_id, "cascade" => true}})
+      assert %{"ok" => true} = result
+      Process.sleep(50)
+
+      assert :ets.lookup(:overmind_missions, parent_id) == []
+      assert :ets.lookup(:overmind_missions, child_id) == []
     end
 
     test "send returns ok for session" do
@@ -156,7 +264,7 @@ defmodule Overmind.APIServerTest do
       Process.sleep(50)
 
       result = APIServer.dispatch(%{"cmd" => "pause", "args" => %{"id" => id}})
-      assert %{"ok" => %{"session_id" => nil, "cwd" => "/tmp"}} = result
+      assert %{"ok" => %{"session_id" => :null, "cwd" => "/tmp"}} = result
     end
 
     test "unpause returns ok" do
@@ -166,6 +274,15 @@ defmodule Overmind.APIServerTest do
       APIServer.dispatch(%{"cmd" => "pause", "args" => %{"id" => id}})
       result = APIServer.dispatch(%{"cmd" => "unpause", "args" => %{"id" => id}})
       assert %{"ok" => true} = result
+    end
+
+    test "status returns daemon health map" do
+      result = APIServer.dispatch(%{"cmd" => "status"})
+      assert %{"ok" => status} = result
+      assert is_binary(status.pid)
+      assert is_integer(status.uptime)
+      assert is_map(status.missions)
+      assert is_integer(status.missions.total)
     end
 
     test "unknown command returns error" do
@@ -214,7 +331,7 @@ defmodule Overmind.APIServerTest do
 
       {:ok, response} = :gen_tcp.recv(sock, 0, 5000)
       decoded = :json.decode(String.trim(response))
-      assert %{"ok" => id} = decoded
+      assert %{"ok" => %{"id" => id}} = decoded
       assert String.length(id) == 8
       :gen_tcp.close(sock)
     end

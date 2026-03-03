@@ -15,16 +15,20 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │   ├── overmind               # Shell script CLI (dispatch + source)
 │   └── cli/
 │       ├── helpers.sh         # JSON helpers (escape, send_cmd, extract_ok, maybe_json_*)
-│       └── commands.sh        # All cmd_* functions (run, ps, logs, attach, etc.)
+│       ├── daemon.sh          # Daemon lifecycle (start, shutdown)
+│       ├── commands.sh        # Mission cmd_* functions (run, ps, logs, attach, etc.)
+│       ├── status.sh          # Daemon health and live monitoring (status, monitor)
+│       └── orchestration.sh  # Orchestration commands (wait)
 ├── lib/
-│   ├── overmind.ex              # Public API (run, ps, logs, stop, kill, format_ps)
+│   ├── overmind.ex              # Public API (run, ps, logs, stop, kill, wait, result, children)
 │   └── overmind/
 │       ├── application.ex       # OTP Application (ETS + DynamicSupervisor)
 │       ├── entrypoint.ex        # Escript entry point (daemon bootstrap only)
 │       ├── daemon.ex            # Daemon runner (starts APIServer, sleeps forever)
+│       ├── formatter.ex         # PS table and tree rendering (format_ps, format_ps_tree)
 │       ├── mission.ex           # GenServer per spawned process (Port)
 │       ├── mission/
-│       │   ├── client.ex        # Client API (get_logs, stop, kill, pause, info, etc.)
+│       │   ├── client.ex        # Client API (get_logs, get_result, stop, kill, wait, kill_cascade, pause, info)
 │       │   ├── store.ex         # ETS operations for mission state
 │       │   └── name.ex          # Agent name generator (adjective-noun)
 │       ├── provider.ex          # Provider behaviour (build_command, parse_line, format_for_logs)
@@ -62,7 +66,8 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │       ├── debug/SKILL.md       # Elixir debugging workflow
 │       ├── learn/SKILL.md       # Session learning extractor
 │       ├── po/SKILL.md          # Product Owner (GitHub issue writer)
-│       └── pr/SKILL.md          # Pull request creator
+│       ├── pr/SKILL.md          # Pull request creator
+│       └── overmind/SKILL.md   # Orchestrator (multi-agent task decomposition)
 ├── test_e2e.sh                  # E2E test script (daemon + raw + claude + session)
 ├── test_smoke.sh                # Smoke test (build, start, run, ps, shutdown)
 ├── mix.exs
@@ -76,8 +81,10 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 - **Daemon** (`Overmind.Daemon`): Starts APIServer and sleeps forever (shell script handles lifecycle)
 - **Missions**: Each spawned command is a GenServer (`Mission`) under DynamicSupervisor, managing a Port. Client API in `Mission.Client`
 - **Providers**: Pluggable command builders/parsers — Raw wraps with `sh -c`, Claude parses stream-json
-- **ETS**: Mission state (status, logs, raw_events, name, cwd, restart_policy, restart_count, last_activity) persists after GenServer exits
+- **ETS**: Mission state (status, logs, raw_events, name, cwd, restart_policy, restart_count, last_activity, exit_code, parent) persists after GenServer exits
 - **Self-Healing**: Restart policies (`:never`, `:on_failure`, `:always`), exponential backoff, stall detection via activity timeout
+- **Orchestration**: Parent hierarchy (`--parent`), `wait` (monitor-based blocking), `kill --cascade` (depth-first), `ps --tree`, `result` (structured output from completed missions)
+- **Self-Awareness**: Missions receive `OVERMIND_MISSION_ID` and `OVERMIND_MISSION_NAME` env vars
 - **Name Resolution**: `Store.resolve_id/1` — all public APIs accept id or agent name
 
 ## Build & Run
@@ -163,7 +170,7 @@ Typespecs serve as deterministic constraints on LLM-generated code — the type 
 - Descriptive names: `cmd_run`, `send_cmd`, `extract_ok`
 
 ### Structure
-- Scripts <150 lines — split into sourced files under `bin/lib/`
+- Scripts <150 lines — split into sourced files under `bin/cli/`
 - Helpers section at top (escape_json, send_cmd, extract_ok)
 - Commands section below (cmd_start, cmd_run, cmd_ps, ...)
 - Dispatch at bottom
@@ -206,7 +213,7 @@ Typespecs serve as deterministic constraints on LLM-generated code — the type 
 - **M0.5** — CWD + Names (done): `--cwd`, `--name`, auto-generated names, name resolution in all commands, refactored Socket→APIServer, CLI→Entrypoint, gutted Daemon
 - **M1** — Session Agents (done): `--type session`, long-running multi-turn agents, `send`, `attach` (hybrid PTY), bidirectional stream-json
 - **M2** — Self-Healing (done): restart policies (`--restart on-failure|always`), exponential backoff (`--backoff`), stall detection (`--activity-timeout`), `--max-restarts`, session resume via `--resume`, `info` command (os_pid)
-- **M2.5** — Orchestration Loop: supervised Ralph Loop — `overmind wait`, `--parent`, `ps --tree`, `kill --cascade`. Session agent as orchestrator (decompose → spawn → wait → validate → record → next)
+- **M2.5** — Orchestration Primitives (done): `wait` (monitor-based blocking), `--parent` hierarchy, `ps --tree`, `kill --cascade`, exit code storage
 - **M3** — Declarative Config: Blueprint TOML
 - **M4** — Full Isolation: worktree + port allocation + Docker
 - **M5** — Shared Akasha: distributed memory
