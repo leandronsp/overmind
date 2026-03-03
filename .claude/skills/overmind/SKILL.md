@@ -41,10 +41,12 @@ overmind run \
   --provider claude \
   --name orchestrator \
   --cwd "{{PROJECT_ROOT}}" \
+  --allowed-tools "Bash,Write,Read,Edit" \
   --json \
   "{{ORCHESTRATOR_PROMPT}}"
 ```
 
+The `--allowed-tools` flag grants the orchestrator autonomous tool access (no permission prompts).
 The `--json` flag returns `{"id":"...","name":"..."}` for confirmation.
 
 ### Phase 4: Report to User
@@ -76,8 +78,8 @@ Your working directory is {{PROJECT_ROOT}}.
 
 You have access to bash. Use the `overmind` CLI to manage child agents:
 
-- `overmind run --provider claude --parent orchestrator --name <name> --cwd {{PROJECT_ROOT}} "<prompt>"` — Spawn a Claude task child
-- `overmind run --provider claude --parent orchestrator --name <name> --cwd {{PROJECT_ROOT}} --json "<prompt>"` — Same, returns JSON
+- `overmind run --provider claude --parent orchestrator --name <name> --cwd {{PROJECT_ROOT}} --restart on-failure --max-restarts 2 --allowed-tools "Bash,Write,Read,Edit" "<prompt>"` — Spawn a Claude task child (self-healing, autonomous)
+- `overmind run --provider claude --parent orchestrator --name <name> --cwd {{PROJECT_ROOT}} --restart on-failure --max-restarts 2 --allowed-tools "Bash,Write,Read,Edit" --json "<prompt>"` — Same, returns JSON
 - `overmind wait <name>` — Block until child finishes (returns exit code)
 - `overmind logs <name>` — Read child output
 - `overmind result <name>` — Get structured result (cost, duration, text) of completed child
@@ -99,11 +101,20 @@ Break the task into independent subtasks. Each subtask should be:
 Name children descriptively: `research-auth`, `impl-login`, `write-tests`, etc.
 
 ### 2. SPAWN
-For each subtask, spawn a child task agent. Include in each child's prompt:
+For each subtask, spawn a child task agent with self-healing:
+```bash
+overmind run --provider claude --parent orchestrator --name <name> \
+  --cwd {{PROJECT_ROOT}} --restart on-failure --max-restarts 2 \
+  --allowed-tools "Bash,Write,Read,Edit" "<prompt>"
+```
+Include in each child's prompt:
 - The specific subtask description
 - Relevant context from the parent task
 - What files to read/modify
 - What constitutes success
+
+Children use `--restart on-failure --max-restarts 2` so Overmind automatically retries transient crashes (OOM, port failure) with exponential backoff. You only intervene when a child exhausts its retries or produces incorrect results.
+
 
 ### 3. WAIT & EVALUATE
 Wait for each child to complete:
@@ -124,9 +135,17 @@ For each completed child, evaluate:
 ### 4. DECIDE
 Based on evaluation:
 - **All done + correct**: Compile a summary and exit
+<<<<<<< HEAD
+- **Child crashed (infra)**: Overmind auto-restarts it (up to 2 times). You just `wait` again — no action needed
+- **Child failed after retries exhausted**: Read its logs, understand why, spawn a NEW child with a corrected prompt that includes the failure context (this is YOUR retry, at the prompt level)
+- **Child succeeded but wrong output**: Spawn a new child with corrected prompt + context from the bad output
+- **Need more work**: Spawn additional children for newly discovered subtasks
+- **Stuck**: After 3 orchestrator-level retries on the same subtask, report the blocker and exit
+=======
 - **Child failed**: Read its logs, understand why, spawn a new child with a corrected prompt that includes the failure context
 - **Need more work**: Spawn additional children for newly discovered subtasks
 - **Stuck**: After 3 failed retries on the same subtask, report the blocker and exit
+>>>>>>> main
 
 ### 5. REPEAT
 Go back to step 3 (or 2 if spawning new children).

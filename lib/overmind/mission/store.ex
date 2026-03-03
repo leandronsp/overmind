@@ -201,6 +201,7 @@ defmodule Overmind.Mission.Store do
     |> Enum.frequencies_by(fn {{:parent, _id}, parent_id} -> parent_id end)
   end
 
+
   @spec insert_exit_code(String.t(), non_neg_integer()) :: true
   def insert_exit_code(id, code) do
     :ets.insert(@table, {{:exit_code, id}, code})
@@ -258,5 +259,45 @@ defmodule Overmind.Mission.Store do
       {id, _pid, _cmd, _status, _started} when is_binary(id) -> true
       _ -> false
     end)
+  end
+
+  @spec collect_resource_usage() :: %{String.t() => {float(), non_neg_integer()}}
+  def collect_resource_usage do
+    list_all()
+    |> Enum.filter(fn {_id, _pid, _cmd, status, _started} -> status == :running end)
+    |> Enum.reduce(%{}, fn {id, pid, _cmd, _status, _started}, acc ->
+      case safe_call(pid, :get_os_pid) do
+        {:ok, os_pid} when is_integer(os_pid) and os_pid > 0 ->
+          case read_process_stats(os_pid) do
+            {:ok, cpu, mem} -> Map.put(acc, id, {cpu, mem})
+            :error -> acc
+          end
+
+        _ ->
+          acc
+      end
+    end)
+  end
+
+  defp read_process_stats(os_pid) do
+    case System.cmd("ps", ["-o", "pcpu=,rss=", "-p", Integer.to_string(os_pid)], stderr_to_stdout: true) do
+      {output, 0} -> parse_ps_stats(output)
+      _ -> :error
+    end
+  end
+
+  defp parse_ps_stats(output) do
+    case String.split(String.trim(output)) do
+      [cpu_str, rss_str] ->
+        with {cpu, _} <- Float.parse(cpu_str),
+             {mem, _} <- Integer.parse(rss_str) do
+          {:ok, cpu, mem}
+        else
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
   end
 end

@@ -878,6 +878,7 @@ defmodule Overmind.MissionTest do
     end
   end
 
+
   describe "wait/2" do
     test "returns immediately for already-exited mission with status and exit_code" do
       id = Mission.generate_id()

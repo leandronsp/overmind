@@ -62,6 +62,18 @@ cmd_status() {
   printf '  Total:    %s\n' "$total"
 }
 
+cmd_top() {
+  trap 'exit 0' INT
+  while true; do
+    clear
+    response=$(send_cmd '{"cmd":"top"}') || return 1
+    text=$(extract_ok "$response") || return 1
+    unescape_json "$text"
+    sleep 2
+  done
+}
+
+
 cmd_monitor() {
   trap 'exit 0' INT
   while true; do

@@ -3,7 +3,7 @@ defmodule Overmind.Provider.ClaudeTest do
 
   alias Overmind.Provider.Claude
 
-  describe "build_command/1" do
+  describe "build_command/2" do
     test "wraps prompt with claude -p flags" do
       assert Claude.build_command("capital da australia") ==
                "claude -p 'capital da australia' --output-format stream-json --verbose"
@@ -12,6 +12,16 @@ defmodule Overmind.Provider.ClaudeTest do
     test "escapes single quotes in prompt" do
       assert Claude.build_command("what's up") ==
                "claude -p 'what'\\''s up' --output-format stream-json --verbose"
+    end
+
+    test "appends --allowedTools when allowed_tools provided" do
+      cmd = Claude.build_command("hello", allowed_tools: "Bash(overmind *),Write")
+      assert cmd =~ "--allowedTools 'Bash(overmind *),Write'"
+    end
+
+    test "no --allowedTools when allowed_tools is nil" do
+      cmd = Claude.build_command("hello", allowed_tools: nil)
+      refute cmd =~ "--allowedTools"
     end
   end
 
@@ -33,6 +43,16 @@ defmodule Overmind.Provider.ClaudeTest do
     test "no --resume when session_id is nil" do
       cmd = Claude.build_session_command(session_id: nil)
       refute cmd =~ "--resume"
+    end
+
+    test "appends --allowedTools when allowed_tools provided" do
+      cmd = Claude.build_session_command(allowed_tools: "Bash,Read,Write")
+      assert cmd =~ "--allowedTools 'Bash,Read,Write'"
+    end
+
+    test "no --allowedTools when allowed_tools is nil" do
+      cmd = Claude.build_session_command(allowed_tools: nil)
+      refute cmd =~ "--allowedTools"
     end
   end
 

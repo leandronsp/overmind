@@ -3,5 +3,6 @@ defmodule Overmind.Entrypoint do
 
   @spec main([String.t()]) :: :ok
   def main(["__daemon__"]), do: Overmind.Daemon.run_daemon()
+  def main(["__tui__"]), do: Overmind.TUI.run()
   def main(_), do: IO.puts("Internal daemon entry point. Use bin/overmind instead.")
 end
