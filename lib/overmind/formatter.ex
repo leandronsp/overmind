@@ -22,6 +22,7 @@ defmodule Overmind.Formatter do
     Enum.join([top_header() | lines], "\n") <> "\n"
   end
 
+
   # Private helpers
 
   defp header do
@@ -108,6 +109,7 @@ defmodule Overmind.Formatter do
       String.pad_trailing(:erlang.float_to_binary(m.output_rate * 1.0, [{:decimals, 1}]), 8) <>
       truncate_command(m.command)
   end
+
 
   defp format_uptime(seconds) when seconds < 60, do: "#{seconds}s"
   defp format_uptime(seconds) when seconds < 3600, do: "#{div(seconds, 60)}m"

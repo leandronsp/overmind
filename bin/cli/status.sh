@@ -73,6 +73,7 @@ cmd_top() {
   done
 }
 
+
 cmd_monitor() {
   trap 'exit 0' INT
   while true; do

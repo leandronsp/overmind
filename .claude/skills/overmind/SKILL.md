@@ -115,6 +115,7 @@ Include in each child's prompt:
 
 Children use `--restart on-failure --max-restarts 2` so Overmind automatically retries transient crashes (OOM, port failure) with exponential backoff. You only intervene when a child exhausts its retries or produces incorrect results.
 
+
 ### 3. WAIT & EVALUATE
 Wait for each child to complete:
 ```bash
@@ -134,11 +135,17 @@ For each completed child, evaluate:
 ### 4. DECIDE
 Based on evaluation:
 - **All done + correct**: Compile a summary and exit
+<<<<<<< HEAD
 - **Child crashed (infra)**: Overmind auto-restarts it (up to 2 times). You just `wait` again — no action needed
 - **Child failed after retries exhausted**: Read its logs, understand why, spawn a NEW child with a corrected prompt that includes the failure context (this is YOUR retry, at the prompt level)
 - **Child succeeded but wrong output**: Spawn a new child with corrected prompt + context from the bad output
 - **Need more work**: Spawn additional children for newly discovered subtasks
 - **Stuck**: After 3 orchestrator-level retries on the same subtask, report the blocker and exit
+=======
+- **Child failed**: Read its logs, understand why, spawn a new child with a corrected prompt that includes the failure context
+- **Need more work**: Spawn additional children for newly discovered subtasks
+- **Stuck**: After 3 failed retries on the same subtask, report the blocker and exit
+>>>>>>> main
 
 ### 5. REPEAT
 Go back to step 3 (or 2 if spawning new children).

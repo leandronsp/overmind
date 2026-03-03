@@ -105,6 +105,7 @@ defmodule Overmind.Mission.Client do
     case Store.lookup(id) do
       :not_found -> {:error, :not_found}
       {:exited, _, _, _} -> {:error, :not_running}
+      {:restarting, _, _, _} -> {:error, :not_running}
       {:running, pid, _, _} ->
         case Store.safe_call(pid, :unpause) do
           {:ok, :ok} -> :ok
@@ -158,6 +159,11 @@ defmodule Overmind.Mission.Client do
           {:exited, status, _, _} ->
             {:ok, %{status: status, exit_code: Store.lookup_exit_code(id)}}
 
+          # ETS cleaned up (kill path) — user intentionally removed it
+          :not_found ->
+            {:ok, %{status: :stopped, exit_code: nil}}
+
+          # GenServer died but ETS doesn't show :exited — external kill
           _ ->
             {:ok, %{status: :crashed, exit_code: Store.lookup_exit_code(id)}}
         end

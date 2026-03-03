@@ -28,10 +28,17 @@ Mission clears `CLAUDECODE`/`CLAUDE_CODE_ENTRYPOINT` env vars on child processes
 
 ## TDD Cycle
 
-1. **RED** — Write one failing test for the next behavior
+1. **RED** — Write the test asserting correct behavior, run it, confirm it fails
 2. **GREEN** — Write minimum code to make it pass
 3. **REFACTOR** — Clean up while staying green
 4. Repeat
+
+### Tests drive code, never the reverse
+
+- The test defines what correct behavior is — **never change a test to match a wrong implementation**
+- If the implementation returns `:stopped` but the test expects `:crashed`, fix the implementation
+- When proving a branch needs coverage: remove the implementation, keep the test, watch it fail — then write the code that makes it pass
+- Every `case` branch, every `_ ->` catch-all must have a test that fails without it
 
 ## Conventions
 

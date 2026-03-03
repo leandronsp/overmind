@@ -247,6 +247,7 @@ defmodule Overmind.APIServer do
     %{"ok" => true}
   end
 
+
   def dispatch(%{"cmd" => "status"}) do
     %{"ok" => Overmind.status()}
   end
@@ -358,6 +359,7 @@ defmodule Overmind.APIServer do
 
   defp maybe_add_allowed_tools(opts, nil), do: opts
   defp maybe_add_allowed_tools(opts, tools), do: Keyword.put(opts, :allowed_tools, tools)
+
 
   defp maybe_add_restart(opts, nil), do: opts
   defp maybe_add_restart(opts, str), do: Keyword.put(opts, :restart_policy, parse_restart(str))

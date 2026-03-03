@@ -612,6 +612,7 @@ defmodule OvermindTest do
     end
   end
 
+
   describe "format_ps_tree/1" do
     test "shows root missions and children with tree chars" do
       missions = [

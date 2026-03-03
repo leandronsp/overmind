@@ -367,6 +367,25 @@ defmodule Overmind.MissionTest do
       assert {:error, :not_found} = Client.pause("nonexist")
     end
 
+    test "unpause on restarting mission returns :not_running" do
+      id = Mission.generate_id()
+
+      {:ok, _pid} =
+        Mission.start_link(
+          id: id,
+          command: "exit 1",
+          restart_policy: :on_failure,
+          max_restarts: 5,
+          backoff_ms: 2000
+        )
+
+      # Wait for :restarting state
+      Process.sleep(200)
+      assert {:restarting, _, _, _} = Overmind.Mission.Store.lookup(id)
+
+      assert {:error, :not_running} = Client.unpause(id)
+    end
+
     test "attached flag in store" do
       id = Mission.generate_id()
       {:ok, _pid} = Mission.start_link(id: id, command: "", type: :session)
@@ -807,6 +826,58 @@ defmodule Overmind.MissionTest do
       assert {:error, :not_found} = Client.kill_cascade("nonexist")
     end
   end
+
+  describe "kill during :restarting with wait" do
+    test "wait returns :stopped after kill during restarting" do
+      id = Mission.generate_id()
+
+      {:ok, _pid} =
+        Mission.start_link(
+          id: id,
+          command: "exit 1",
+          restart_policy: :on_failure,
+          max_restarts: 5,
+          backoff_ms: 5000
+        )
+
+      # Wait for :restarting state
+      Process.sleep(200)
+      assert {:restarting, _, _, _} = Overmind.Mission.Store.lookup(id)
+
+      # Start waiting in a task before killing
+      wait_task = Task.async(fn -> Client.wait(id) end)
+      Process.sleep(50)
+      assert :ok = Client.kill(id)
+
+      assert {:ok, %{status: :stopped}} = Task.await(wait_task, 3000)
+    end
+
+    test "wait returns :crashed after external process kill" do
+      Process.flag(:trap_exit, true)
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "sleep 60")
+      Process.sleep(50)
+
+      wait_task = Task.async(fn -> Client.wait(id) end)
+      Process.sleep(50)
+      Process.exit(pid, :kill)
+
+      assert {:ok, %{status: :crashed}} = Task.await(wait_task, 3000)
+    end
+
+    test "wait returns :stopped after kill during running" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60")
+      Process.sleep(50)
+
+      wait_task = Task.async(fn -> Client.wait(id) end)
+      Process.sleep(50)
+      assert :ok = Client.kill(id)
+
+      assert {:ok, %{status: :stopped}} = Task.await(wait_task, 3000)
+    end
+  end
+
 
   describe "wait/2" do
     test "returns immediately for already-exited mission with status and exit_code" do
