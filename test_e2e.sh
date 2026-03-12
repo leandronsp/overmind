@@ -32,7 +32,7 @@ assert_eq() {
 }
 
 extract_id() {
-  echo "$1" | awk '{print $NF}'
+  echo "$1" | awk '{print $3}'
 }
 
 echo -e "${YELLOW}=== Building ===${NC}"
@@ -430,6 +430,33 @@ assert_eq "parent removed" "$found_parent" ""
 c_status=$($CLI ps | grep "$c_id" | awk '{print $4}' || true)
 assert_eq "child still running" "$c_status" "running"
 $CLI kill "$c_id" >/dev/null
+
+echo -e "\n${YELLOW}=== Status: one-shot daemon health ===${NC}"
+status_out=$($CLI status)
+assert_contains "has PID" "$status_out" "PID:"
+assert_contains "has Node" "$status_out" "Node:"
+assert_contains "has Uptime" "$status_out" "Uptime:"
+assert_contains "has Memory" "$status_out" "Memory:"
+assert_contains "has Processes" "$status_out" "Processes:"
+assert_contains "has ETS Tables" "$status_out" "ETS Tables:"
+assert_contains "has Running" "$status_out" "Running:"
+assert_contains "has Total" "$status_out" "Total:"
+
+echo -e "\n${YELLOW}=== Status: mission counts update ===${NC}"
+out=$($CLI run "sleep 60")
+id=$(extract_id "$out")
+sleep 1
+status_out=$($CLI status)
+running=$(printf '%s' "$status_out" | grep "Running:" | awk '{print $2}')
+if [ "$running" -ge 1 ] 2>/dev/null; then
+  echo -e "  ${GREEN}✓${NC} running count >= 1 (got $running)"
+  ((pass++))
+else
+  echo -e "  ${RED}✗${NC} expected running >= 1, got '$running'"
+  ((fail++))
+fi
+$CLI kill "$id" >/dev/null
+sleep 0.5
 
 echo -e "\n${YELLOW}=== Cleanup ===${NC}"
 $CLI shutdown
