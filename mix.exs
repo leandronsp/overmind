@@ -35,7 +35,15 @@ defmodule Overmind.MixProject do
 
   defp deps do
     [
-      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
+      {:toml, "~> 0.7"},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:exqlite, "~> 0.23"},
+      {:phoenix, "~> 1.7"},
+      {:phoenix_live_view, "~> 1.0"},
+      {:phoenix_html, "~> 4.1"},
+      {:bandit, "~> 1.5"},
+      {:jason, "~> 1.4"},
+      {:lazy_html, ">= 0.1.0", only: :test}
     ]
   end
 end

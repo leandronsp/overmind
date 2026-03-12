@@ -326,4 +326,38 @@ defmodule Overmind.Mission.StoreTest do
       assert Store.list_all() == []
     end
   end
+
+  describe "collect_resource_usage/0" do
+    test "returns empty map when no missions" do
+      assert Store.collect_resource_usage() == %{}
+    end
+
+    test "skips non-running missions" do
+      Store.insert("m1", {self(), "echo hi", :stopped, 100})
+      assert Store.collect_resource_usage() == %{}
+    end
+
+    test "skips running missions whose GenServer is dead" do
+      {:ok, pid} = Agent.start_link(fn -> :ok end)
+      Agent.stop(pid)
+      Process.sleep(10)
+      Store.insert("m1", {pid, "echo hi", :running, 100})
+
+      assert Store.collect_resource_usage() == %{}
+    end
+
+    test "collects cpu and mem for a real running process" do
+      {:ok, id} = Overmind.run("sleep 60")
+      [{^id, pid, _, _, _}] = :ets.lookup(:overmind_missions, id)
+      Process.sleep(100)
+
+      result = Store.collect_resource_usage()
+      assert map_size(result) >= 1
+      {cpu, mem} = Map.get(result, id)
+      assert is_float(cpu)
+      assert is_integer(mem)
+
+      GenServer.stop(pid, :normal, 500)
+    end
+  end
 end

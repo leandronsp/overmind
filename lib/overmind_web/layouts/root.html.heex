@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content={Plug.CSRFProtection.get_csrf_token()} />
+    <title>Overmind</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: monospace; background: #0d1117; color: #c9d1d9; padding: 24px; }
+      h1 { font-size: 1.4rem; color: #58a6ff; margin-bottom: 16px; }
+      h2 { font-size: 1.1rem; color: #8b949e; margin-bottom: 12px; }
+      a { color: #58a6ff; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+      thead th { color: #8b949e; text-align: left; padding: 8px 12px; border-bottom: 1px solid #21262d; }
+      tbody tr:hover { background: #161b22; }
+      tbody td { padding: 8px 12px; border-bottom: 1px solid #21262d; }
+      .status-running { color: #3fb950; }
+      .status-stopped, .status-exited { color: #8b949e; }
+      .status-crashed { color: #f85149; }
+      .status-restarting { color: #d29922; }
+      pre { background: #161b22; border: 1px solid #21262d; border-radius: 6px; padding: 16px; overflow-x: auto; white-space: pre-wrap; font-size: 0.8rem; line-height: 1.5; max-height: 70vh; overflow-y: auto; }
+      .back { display: inline-block; margin-bottom: 16px; font-size: 0.85rem; }
+      .empty { color: #8b949e; padding: 24px; text-align: center; }
+    </style>
+  </head>
+  <body>
+    {@inner_content}
+    <script src="/js/phoenix/phoenix.min.js"></script>
+    <script src="/js/lv/phoenix_live_view.min.js"></script>
+    <script>
+      let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
+      let liveSocket = new LiveSocket("/live", Socket, {params: {_csrf_token: csrfToken}});
+      liveSocket.connect();
+    </script>
+  </body>
+</html>

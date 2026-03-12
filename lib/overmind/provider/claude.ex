@@ -2,20 +2,27 @@ defmodule Overmind.Provider.Claude do
   @moduledoc false
   @behaviour Overmind.Provider
 
-  @spec build_command(String.t()) :: String.t()
-  def build_command(prompt) do
+  @spec build_command(String.t(), keyword()) :: String.t()
+  def build_command(prompt, opts \\ []) do
     escaped = String.replace(prompt, "'", "'\\''")
-    "claude -p '#{escaped}' --output-format stream-json --verbose"
+    base = "claude -p '#{escaped}' --output-format stream-json --verbose"
+    maybe_allowed_tools(base, Keyword.get(opts, :allowed_tools))
   end
 
   @spec build_session_command(keyword()) :: String.t()
   def build_session_command(opts \\ []) do
     base = "claude -p --input-format stream-json --output-format stream-json --verbose"
-    maybe_resume(base, Keyword.get(opts, :session_id))
+
+    base
+    |> maybe_resume(Keyword.get(opts, :session_id))
+    |> maybe_allowed_tools(Keyword.get(opts, :allowed_tools))
   end
 
   defp maybe_resume(cmd, nil), do: cmd
   defp maybe_resume(cmd, session_id), do: cmd <> " --resume #{session_id}"
+
+  defp maybe_allowed_tools(cmd, nil), do: cmd
+  defp maybe_allowed_tools(cmd, tools), do: cmd <> " --allowedTools '#{tools}'"
 
   @spec build_input_message(String.t()) :: String.t()
   def build_input_message(msg) do

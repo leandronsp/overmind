@@ -2,8 +2,8 @@ defmodule Overmind.Provider.Raw do
   @moduledoc false
   @behaviour Overmind.Provider
 
-  @spec build_command(String.t()) :: String.t()
-  def build_command(command) do
+  @spec build_command(String.t(), keyword()) :: String.t()
+  def build_command(command, _opts \\ []) do
     escaped = String.replace(command, "'", "'\\''")
     "sh -c '#{escaped}'"
   end

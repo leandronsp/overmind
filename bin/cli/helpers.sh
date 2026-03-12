@@ -5,7 +5,7 @@
 # --- JSON encoding ---
 
 escape_json() {
-  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' '
 }
 
 unescape_json() {

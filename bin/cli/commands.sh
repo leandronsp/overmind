@@ -15,6 +15,7 @@ cmd_run() {
   max_seconds=""
   backoff=""
   activity_timeout=""
+  allowed_tools=""
   json_output=""
 
   while [ $# -gt 0 ]; do
@@ -29,6 +30,7 @@ cmd_run() {
       --max-seconds)      max_seconds="$2"; shift 2 ;;
       --backoff)          backoff="$2"; shift 2 ;;
       --activity-timeout) activity_timeout="$2"; shift 2 ;;
+      --allowed-tools)    allowed_tools="$2"; shift 2 ;;
       --json)             json_output="true"; shift ;;
       *)                  command="$command $1"; shift ;;
     esac
@@ -52,6 +54,7 @@ cmd_run() {
   extra="$extra$(maybe_json_int "max_seconds" "$max_seconds")"
   extra="$extra$(maybe_json_int "backoff" "$backoff")"
   extra="$extra$(maybe_json_int "activity_timeout" "$activity_timeout")"
+  extra="$extra$(maybe_json_str "allowed_tools" "$allowed_tools")"
 
   json="{\"cmd\":\"run\",\"args\":{\"command\":\"$escaped\",\"type\":\"$type\",\"provider\":\"$provider\"$extra}}"
   response=$(send_cmd "$json") || return 1
@@ -190,6 +193,16 @@ cmd_send() {
 
 cmd_detach() { simple_id_cmd "unpause" "$1" "Detached from"; }
 
+cmd_tui() {
+  if [ ! -S "$SOCK" ]; then
+    echo "Daemon not running. Start with: overmind start" >&2
+    return 1
+  fi
+  # Safety net: restore terminal if the escript crashes before it can clean up
+  trap 'stty sane 2>/dev/null; printf "\n"' EXIT
+  "$DAEMON" __tui__
+}
+
 cmd_attach() {
   id="$1"
   escaped=$(escape_json "$id")
@@ -235,6 +248,94 @@ cmd_attach() {
   claude --resume "$session_id"
 }
 
+cmd_apply() {
+  if [ -z "${1:-}" ]; then
+    echo "Missing file. Usage: overmind apply <file.toml>"
+    return 1
+  fi
+  path="$1"
+  # Resolve to absolute path before sending to daemon (daemon's CWD may differ)
+  if [ -f "$path" ]; then
+    path="$(cd "$(dirname "$path")" && pwd)/$(basename "$path")"
+  fi
+  escaped=$(escape_json "$path")
+  response=$(send_cmd "{\"cmd\":\"apply\",\"args\":{\"path\":\"$escaped\"}}") || return 1
+  if printf '%s' "$response" | grep -q '"error"'; then
+    err=$(printf '%s' "$response" | sed 's/.*"error":"\([^"]*\)".*/\1/')
+    echo "Error: $err" >&2
+    return 1
+  fi
+  text=$(extract_ok "$response") || return 1
+  echo "Blueprint applied:"
+  printf '%s\n' "$text" | tr ',' '\n' | sed 's/[{}]//g; s/"name"://g; s/"id"://g; s/"//g; s/^ //; /^$/d'
+}
+
+cmd_agents() {
+  if [ -z "${1:-}" ]; then
+    echo "Missing file. Usage: overmind agents <file.toml>"
+    return 1
+  fi
+  path="$1"
+  if [ -f "$path" ]; then
+    path="$(cd "$(dirname "$path")" && pwd)/$(basename "$path")"
+  fi
+  escaped=$(escape_json "$path")
+  response=$(send_cmd "{\"cmd\":\"agents\",\"args\":{\"path\":\"$escaped\"}}") || return 1
+  text=$(extract_ok "$response") || return 1
+  unescape_json "$text"
+}
+
+cmd_isolate() {
+  project_path="${1:-$(pwd)}"
+  mission_id="${2:-}"
+
+  if [ -z "$mission_id" ]; then
+    echo "Missing mission id. Usage: overmind isolate <project_path> <mission_id>"
+    return 1
+  fi
+
+  # Resolve to absolute path before sending to daemon (daemon CWD may differ)
+  if [ -d "$project_path" ]; then
+    project_path="$(cd "$project_path" && pwd)"
+  fi
+
+  ep=$(escape_json "$project_path")
+  em=$(escape_json "$mission_id")
+  json="{\"cmd\":\"isolate\",\"args\":{\"mission_id\":\"$em\",\"project_path\":\"$ep\"}}"
+  response=$(send_cmd "$json") || return 1
+
+  if printf '%s' "$response" | grep -q '"error"'; then
+    err=$(printf '%s' "$response" | sed 's/.*"error":"\([^"]*\)".*/\1/')
+    echo "Error: $err" >&2
+    return 1
+  fi
+
+  # Response: {"ok":{"worktree_path":"...","env":{"DB_PORT":"3100",...}}}
+  wt=$(printf '%s' "$response" | sed 's/.*"worktree_path":"\([^"]*\)".*/\1/')
+  echo "Worktree: $wt"
+}
+
+cmd_isolate_teardown() {
+  mission_id="${1:-}"
+  project_path="${2:-$(pwd)}"
+
+  if [ -z "$mission_id" ]; then
+    echo "Missing mission id. Usage: overmind isolate teardown <mission_id> [project_path]"
+    return 1
+  fi
+
+  if [ -d "$project_path" ]; then
+    project_path="$(cd "$project_path" && pwd)"
+  fi
+
+  em=$(escape_json "$mission_id")
+  ep=$(escape_json "$project_path")
+  json="{\"cmd\":\"isolate_teardown\",\"args\":{\"mission_id\":\"$em\",\"project_path\":\"$ep\"}}"
+  response=$(send_cmd "$json") || return 1
+  extract_ok "$response" > /dev/null || return 1
+  echo "Isolation teardown complete for mission $mission_id"
+}
+
 usage() {
   cat <<'EOF'
 Overmind v0.2.0 — Kubernetes for AI Agents
@@ -270,7 +371,12 @@ Commands:
   stop <id>                Stop a mission (SIGTERM)
   kill <id>                Kill a mission (SIGKILL)
   kill <id> --cascade      Kill mission and all descendants
+  apply <file.toml>        Spawn all agents declared in a blueprint (respects depends_on)
+  agents <file.toml>       List agents defined in a blueprint file
+  isolate <path> <id>      Set up full isolation (worktree + ports + docker)
+  tui                      Launch Nexus — k9s-inspired TUI (q to quit)
   status                   Show daemon health and mission summary
+  top                      Live-refresh resource usage per mission (Ctrl+C to exit)
   monitor                  Live-refresh status + mission list (Ctrl+C to exit)
 EOF
 }

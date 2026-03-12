@@ -14,6 +14,7 @@ LOGFILE="$HOME/.overmind/daemon.log"
 . "$BASEDIR/cli/commands.sh"
 . "$BASEDIR/cli/orchestration.sh"
 . "$BASEDIR/cli/status.sh"
+. "$BASEDIR/cli/quests.sh"
 
 case "${1:-}" in
   start)       cmd_start ;;
@@ -37,8 +38,33 @@ case "${1:-}" in
   send)        shift; cmd_send "$@" ;;
   attach)      cmd_attach "$2" ;;
   detach)      cmd_detach "$2" ;;
+  tui)         cmd_tui ;;
+  apply)       shift; cmd_apply "$@" ;;
+  agents)      shift; cmd_agents "$@" ;;
+  isolate)
+    case "${2:-}" in
+      teardown) shift 2; cmd_isolate_teardown "$@" ;;
+      *)        shift; cmd_isolate "$@" ;;
+    esac
+    ;;
   status)      cmd_status ;;
+  top)         cmd_top ;;
   monitor)     cmd_monitor ;;
+  quest)
+    case "${2:-}" in
+      run)  shift 2; cmd_quest_run "$@" ;;
+      list) cmd_quest_list ;;
+      *)    echo "Unknown quest command: ${2:-}"; usage ;;
+    esac
+    ;;
+  ritual)
+    case "${2:-}" in
+      create) shift 2; cmd_ritual_create "$@" ;;
+      list)   cmd_ritual_list ;;
+      delete) cmd_ritual_delete "$3" ;;
+      *)      echo "Unknown ritual command: ${2:-}"; usage ;;
+    esac
+    ;;
   "")          usage ;;
   *)           echo "Unknown command: $1"; usage ;;
 esac

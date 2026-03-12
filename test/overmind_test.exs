@@ -564,6 +564,55 @@ defmodule OvermindTest do
     end
   end
 
+  describe "format_top/1" do
+    test "formats empty list with header only" do
+      output = Overmind.format_top([])
+      assert output =~ "ID"
+      assert output =~ "NAME"
+      assert output =~ "STATUS"
+      assert output =~ "CPU%"
+      assert output =~ "MEM(KB)"
+      assert output =~ "OUT/s"
+      assert output =~ "COMMAND"
+    end
+
+    test "formats missions with resource columns" do
+      entries = [
+        %{id: "abc12345", name: "bold-arc", status: :running, cpu_percent: 1.5, memory_kb: 2048, output_rate: 0.3, command: "sleep 60"}
+      ]
+
+      output = Overmind.format_top(entries)
+      assert output =~ "abc12345"
+      assert output =~ "bold-arc"
+      assert output =~ "running"
+      assert output =~ "1.5"
+      assert output =~ "2048"
+      assert output =~ "0.3"
+      assert output =~ "sleep 60"
+    end
+
+    test "truncates long commands" do
+      entries = [
+        %{id: "abc12345", name: "bold-arc", status: :running, cpu_percent: 0.0, memory_kb: 0, output_rate: 0.0,
+          command: String.duplicate("x", 50)}
+      ]
+
+      output = Overmind.format_top(entries)
+      assert output =~ "..."
+    end
+
+    test "handles zero cpu and memory" do
+      entries = [
+        %{id: "abc12345", name: nil, status: :stopped, cpu_percent: 0.0, memory_kb: 0, output_rate: 0.0, command: "true"}
+      ]
+
+      output = Overmind.format_top(entries)
+      assert output =~ "0.0"
+      assert output =~ "stopped"
+    end
+  end
+
+
   describe "format_ps_tree/1" do
     test "shows root missions and children with tree chars" do
       missions = [

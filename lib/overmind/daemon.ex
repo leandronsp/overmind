@@ -5,6 +5,7 @@ defmodule Overmind.Daemon do
   def run_daemon do
     Application.put_env(:overmind, :started_at, System.system_time(:second))
     Overmind.APIServer.start_link()
+    Application.put_env(:overmind, :started_at, System.system_time(:second))
     Process.sleep(:infinity)
   end
 end
