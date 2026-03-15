@@ -175,6 +175,21 @@ defmodule Overmind do
     id |> Store.resolve_id() |> Client.get_logs()
   end
 
+  @spec logs_all() :: {:ok, String.t()}
+  def logs_all do
+    output =
+      Store.list_all()
+      |> Enum.sort_by(fn {_, _, _, _, started_at} -> started_at end)
+      |> Enum.map(fn {id, _, _, _, _} ->
+        name = Store.lookup_name(id) || id
+        {:ok, logs} = Client.get_logs(id)
+        "=== #{name} (#{id}) ===\n#{logs}"
+      end)
+      |> Enum.join("\n")
+
+    {:ok, output}
+  end
+
   @spec result(String.t()) :: {:ok, map()} | {:error, :not_found | :not_finished}
   def result(id) do
     id |> Store.resolve_id() |> Client.get_result()
@@ -198,6 +213,12 @@ defmodule Overmind do
   @spec kill_cascade(String.t()) :: :ok | {:error, :not_found}
   def kill_cascade(id) do
     id |> Store.resolve_id() |> Client.kill_cascade()
+  end
+
+  @spec kill_all() :: :ok
+  def kill_all do
+    Store.list_all()
+    |> Enum.each(fn {id, _, _, _, _} -> Client.kill_cascade(id) end)
   end
 
   defdelegate format_ps(missions), to: Overmind.Formatter

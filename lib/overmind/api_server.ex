@@ -76,6 +76,11 @@ defmodule Overmind.APIServer do
     end
   end
 
+  def dispatch(%{"cmd" => "logs", "args" => %{"all" => true}}) do
+    {:ok, logs} = Overmind.logs_all()
+    %{"ok" => logs}
+  end
+
   def dispatch(%{"cmd" => "logs"} = req) do
     id = get_in(req, ["args", "id"])
 
@@ -108,6 +113,11 @@ defmodule Overmind.APIServer do
       :ok -> %{"ok" => true}
       {:error, reason} -> %{"error" => to_string(reason)}
     end
+  end
+
+  def dispatch(%{"cmd" => "kill", "args" => %{"all" => true}}) do
+    Overmind.kill_all()
+    %{"ok" => true}
   end
 
   def dispatch(%{"cmd" => "kill"} = req) do

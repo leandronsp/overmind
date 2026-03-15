@@ -124,6 +124,13 @@ cmd_info() {
 }
 
 cmd_logs() {
+  if [ -z "${1:-}" ]; then
+    response=$(send_cmd '{"cmd":"logs","args":{"all":true}}') || return 1
+    text=$(extract_ok "$response") || return 1
+    unescape_json "$text"
+    return 0
+  fi
+
   escaped=$(escape_json "$1")
   response=$(send_cmd "{\"cmd\":\"logs\",\"args\":{\"id\":\"$escaped\"}}") || return 1
   text=$(extract_ok "$response") || return 1
@@ -153,16 +160,25 @@ cmd_stop() { simple_id_cmd "stop" "$1" "Stopped"; }
 cmd_kill() {
   id=""
   cascade=""
+  all=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
       --cascade) cascade="true"; shift ;;
+      --all)     all="true"; shift ;;
       *)         id="$1"; shift ;;
     esac
   done
 
+  if [ -n "$all" ]; then
+    response=$(send_cmd '{"cmd":"kill","args":{"all":true}}') || return 1
+    extract_ok "$response" > /dev/null || return 1
+    echo "Killed all missions"
+    return 0
+  fi
+
   if [ -z "$id" ]; then
-    echo "Missing id. Usage: overmind kill <id> [--cascade]"
+    echo "Missing id. Usage: overmind kill <id> [--cascade] | overmind kill --all"
     return 1
   fi
 
@@ -265,11 +281,13 @@ Commands:
   ps --tree                Show mission hierarchy as tree
   ps --children <id>       Show children of a mission
   info <id>                Show mission info (os_pid, status, etc.)
+  logs                     Show all mission logs
   logs <id>                Show mission logs
   result <id>              Show final result of a completed mission (JSON)
   stop <id>                Stop a mission (SIGTERM)
   kill <id>                Kill a mission (SIGKILL)
   kill <id> --cascade      Kill mission and all descendants
+  kill --all               Kill all missions
   status                   Show daemon health and mission summary
   monitor                  Live-refresh status + mission list (Ctrl+C to exit)
   agents <file.toml>       List agents defined in a blueprint

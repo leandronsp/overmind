@@ -18,9 +18,10 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │       ├── daemon.sh          # Daemon lifecycle (start, shutdown)
 │       ├── commands.sh        # Mission cmd_* functions (run, ps, logs, attach, etc.)
 │       ├── status.sh          # Daemon health and live monitoring (status, monitor)
-│       └── orchestration.sh  # Orchestration commands (wait)
+│       ├── orchestration.sh  # Orchestration commands (wait)
+│       └── blueprint.sh      # Blueprint commands (agents, apply)
 ├── lib/
-│   ├── overmind.ex              # Public API (run, ps, logs, stop, kill, wait, result, children)
+│   ├── overmind.ex              # Public API (run, ps, logs, logs_all, stop, kill, kill_all, wait, result, children)
 │   └── overmind/
 │       ├── application.ex       # OTP Application (ETS + DynamicSupervisor)
 │       ├── entrypoint.ex        # Escript entry point (daemon bootstrap only)
@@ -31,6 +32,11 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │       │   ├── client.ex        # Client API (get_logs, get_result, stop, kill, wait, kill_cascade, pause, info)
 │       │   ├── store.ex         # ETS operations for mission state
 │       │   └── name.ex          # Agent name generator (adjective-noun)
+│       ├── blueprint.ex         # Blueprint public API (agents, apply)
+│       ├── blueprint/
+│       │   ├── parser.ex        # TOML parser with validation
+│       │   ├── dag.ex           # Kahn's algorithm DAG topo sort
+│       │   └── runner.ex        # Blueprint Runner GenServer (async pipeline)
 │       ├── provider.ex          # Provider behaviour (build_command, parse_line, format_for_logs)
 │       ├── provider/
 │       │   ├── raw.ex           # Raw shell commands (wraps with sh -c)
@@ -45,6 +51,9 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │   │   ├── mission/
 │   │   │   ├── store_test.exs
 │   │   │   └── name_test.exs
+│   │   ├── blueprint_test.exs
+│   │   ├── blueprint/
+│   │   │   └── runner_test.exs
 │   │   └── provider/
 │   │       ├── raw_test.exs
 │   │       └── claude_test.exs
@@ -83,7 +92,8 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 - **Providers**: Pluggable command builders/parsers — Raw wraps with `sh -c`, Claude parses stream-json
 - **ETS**: Mission state (status, logs, raw_events, name, cwd, restart_policy, restart_count, last_activity, exit_code, parent) persists after GenServer exits
 - **Self-Healing**: Restart policies (`:never`, `:on_failure`, `:always`), exponential backoff, stall detection via activity timeout
-- **Orchestration**: Parent hierarchy (`--parent`), `wait` (monitor-based blocking), `kill --cascade` (depth-first), `ps --tree`, `result` (structured output from completed missions)
+- **Orchestration**: Parent hierarchy (`--parent`), `wait` (monitor-based blocking), `kill --cascade` (depth-first), `kill --all`, `ps --tree`, `result` (structured output from completed missions)
+- **Blueprint**: TOML-based declarative config. `Blueprint.apply/1` validates synchronously, starts async Runner GenServer. Runner registers in ETS as `:blueprint` type, spawns a worker process for the pipeline loop. All existing commands (wait, logs, ps, stop, kill) work on blueprint runners.
 - **Self-Awareness**: Missions receive `OVERMIND_MISSION_ID` and `OVERMIND_MISSION_NAME` env vars
 - **Name Resolution**: `Store.resolve_id/1` — all public APIs accept id or agent name
 
@@ -214,7 +224,7 @@ Typespecs serve as deterministic constraints on LLM-generated code — the type 
 - **M1** — Session Agents (done): `--type session`, long-running multi-turn agents, `send`, `attach` (hybrid PTY), bidirectional stream-json
 - **M2** — Self-Healing (done): restart policies (`--restart on-failure|always`), exponential backoff (`--backoff`), stall detection (`--activity-timeout`), `--max-restarts`, session resume via `--resume`, `info` command (os_pid)
 - **M2.5** — Orchestration Primitives (done): `wait` (monitor-based blocking), `--parent` hierarchy, `ps --tree`, `kill --cascade`, exit code storage
-- **M3** — Declarative Config: Blueprint TOML
+- **M3** — Declarative Config (done): Blueprint TOML, `agents` (list specs), `apply` (async pipeline via Runner GenServer), `depends_on` DAG with cycle detection, `kill --all`, `logs` (all agents)
 - **M4** — Full Isolation: worktree + port allocation + Docker
 - **M5** — Shared Akasha: distributed memory
 - **M6** — Web Dashboard: Phoenix LiveView
