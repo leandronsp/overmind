@@ -24,7 +24,19 @@ defmodule Overmind.BlueprintTest do
   end
 
   describe "apply/1" do
-    test "linear pipeline A→B→C spawns all in order" do
+    test "returns id and name immediately" do
+      path = write_toml("""
+      [agents.greeter]
+      command = "echo hello"
+      """)
+
+      assert {:ok, %{id: id, name: name}} = Overmind.Blueprint.apply(path)
+      assert is_binary(id)
+      assert String.length(id) == 8
+      assert is_binary(name)
+    end
+
+    test "linear pipeline A->B->C completes via wait" do
       path = write_toml("""
       [agents.step1]
       command = "echo one"
@@ -38,19 +50,18 @@ defmodule Overmind.BlueprintTest do
       depends_on = ["step2"]
       """)
 
-      assert {:ok, results} = Overmind.Blueprint.apply(path)
-      assert length(results) == 3
-      names = Enum.map(results, & &1.name)
-      assert names == ["step1", "step2", "step3"]
+      assert {:ok, %{id: id}} = Overmind.Blueprint.apply(path)
+      assert {:ok, result} = Overmind.wait(id)
+      assert result.status == :stopped
+      assert result.exit_code == 0
 
-      Enum.each(results, fn r ->
-        assert r.status == :stopped
-        assert r.exit_code == 0
-        assert is_binary(r.id)
-      end)
+      # All agents exist in ETS
+      assert Overmind.Mission.Store.find_by_name("step1")
+      assert Overmind.Mission.Store.find_by_name("step2")
+      assert Overmind.Mission.Store.find_by_name("step3")
     end
 
-    test "agent failure stops pipeline and reports error" do
+    test "agent failure crashes runner" do
       path = write_toml("""
       [agents.ok_step]
       command = "echo fine"
@@ -64,23 +75,10 @@ defmodule Overmind.BlueprintTest do
       depends_on = ["bad_step"]
       """)
 
-      assert {:error, err} = Overmind.Blueprint.apply(path)
-      assert err.agent == "bad_step"
-      assert err.reason == :non_zero_exit
-      assert length(err.completed) == 1
-      assert hd(err.completed).name == "ok_step"
-    end
-
-    test "single agent with no deps works" do
-      path = write_toml("""
-      [agents.solo]
-      command = "echo alone"
-      """)
-
-      assert {:ok, [result]} = Overmind.Blueprint.apply(path)
-      assert result.name == "solo"
-      assert result.status == :stopped
-      assert result.exit_code == 0
+      assert {:ok, %{id: id}} = Overmind.Blueprint.apply(path)
+      assert {:ok, result} = Overmind.wait(id)
+      assert result.status == :crashed
+      assert result.exit_code == 1
     end
 
     test "sets parent on agents with depends_on" do
@@ -93,9 +91,24 @@ defmodule Overmind.BlueprintTest do
       depends_on = ["parent_agent"]
       """)
 
-      assert {:ok, [parent, child]} = Overmind.Blueprint.apply(path)
-      stored_parent = Overmind.Mission.Store.lookup_parent(child.id)
-      assert stored_parent == parent.id
+      assert {:ok, %{id: id}} = Overmind.Blueprint.apply(path)
+      assert {:ok, _} = Overmind.wait(id)
+
+      parent_id = Overmind.Mission.Store.find_by_name("parent_agent")
+      child_id = Overmind.Mission.Store.find_by_name("child_agent")
+      assert Overmind.Mission.Store.lookup_parent(child_id) == parent_id
+    end
+
+    test "logs contain pipeline output" do
+      path = write_toml("""
+      [agents.greeter]
+      command = "echo hello"
+      """)
+
+      assert {:ok, %{id: id}} = Overmind.Blueprint.apply(path)
+      assert {:ok, _} = Overmind.wait(id)
+      assert {:ok, logs} = Overmind.logs(id)
+      assert logs =~ "greeter"
     end
 
     test "returns error for missing file" do

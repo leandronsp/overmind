@@ -170,18 +170,11 @@ defmodule Overmind.APIServer do
     path = get_in(req, ["args", "path"])
 
     case Overmind.Blueprint.apply(path) do
-      {:ok, results} ->
-        %{"ok" => Enum.map(results, &format_agent_result/1)}
-
-      {:error, %{reason: reason, agent: agent, completed: completed}} ->
-        %{"error" => %{
-          "reason" => to_string(reason),
-          "agent" => agent,
-          "completed" => Enum.map(completed, &format_agent_result/1)
-        }}
+      {:ok, %{id: id, name: name}} ->
+        %{"ok" => %{"id" => id, "name" => name}}
 
       {:error, reason} ->
-        %{"error" => to_string(reason)}
+        %{"error" => format_blueprint_error(reason)}
     end
   end
 
@@ -309,10 +302,6 @@ defmodule Overmind.APIServer do
 
   defp format_agent_spec(spec) do
     %{"name" => spec.name, "command" => spec.command, "depends_on" => spec.depends_on}
-  end
-
-  defp format_agent_result(result) do
-    %{"name" => result.name, "id" => result.id, "status" => to_string(result.status), "exit_code" => nil_to_null(result.exit_code)}
   end
 
   defp format_blueprint_error({:missing_command, name}), do: "missing command for agent: #{name}"

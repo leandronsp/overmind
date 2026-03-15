@@ -43,39 +43,14 @@ cmd_apply() {
   escaped=$(escape_json "$path")
   response=$(send_cmd "{\"cmd\":\"apply\",\"args\":{\"path\":\"$escaped\"}}") || return 1
 
-  # Check for structured error (pipeline failure)
   if printf '%s' "$response" | grep -q '"error"'; then
-    if printf '%s' "$response" | grep -q '"reason"'; then
-      agent=$(printf '%s' "$response" | sed 's/.*"agent":"\([^"]*\)".*/\1/')
-      reason=$(printf '%s' "$response" | sed 's/.*"reason":"\([^"]*\)".*/\1/')
-      echo "Pipeline failed at agent '$agent': $reason" >&2
-
-      # Print completed agents
-      if printf '%s' "$response" | grep -q '"completed":\[{'; then
-        echo "Completed:" >&2
-        printf '%s' "$response" | sed 's/.*"completed":\[//; s/\]}.*//' | tr '}' '\n' | while IFS= read -r entry; do
-          cname=$(printf '%s' "$entry" | sed 's/.*"name":"\([^"]*\)".*/\1/')
-          cstatus=$(printf '%s' "$entry" | sed 's/.*"status":"\([^"]*\)".*/\1/')
-          if [ -n "$cname" ] && [ "$cname" != "$entry" ]; then
-            echo "  $cname: $cstatus" >&2
-          fi
-        done
-      fi
-      return 1
-    else
-      err=$(printf '%s' "$response" | sed 's/.*"error":"\([^"]*\)".*/\1/')
-      echo "Error: $err" >&2
-      return 1
-    fi
+    err=$(printf '%s' "$response" | sed 's/.*"error":"\([^"]*\)".*/\1/')
+    echo "Error: $err" >&2
+    return 1
   fi
 
-  # Success: {"ok":[{"name":"...","id":"...","status":"...","exit_code":N},...]}
-  printf '%s' "$response" | sed 's/.*"ok":\[//; s/\]}//' | tr '}' '\n' | while IFS= read -r entry; do
-    name=$(printf '%s' "$entry" | sed 's/.*"name":"\([^"]*\)".*/\1/')
-    status=$(printf '%s' "$entry" | sed 's/.*"status":"\([^"]*\)".*/\1/')
-    exit_code=$(printf '%s' "$entry" | sed 's/.*"exit_code":\([0-9]*\).*/\1/')
-    if [ -n "$name" ] && [ "$name" != "$entry" ]; then
-      echo "$name: $status (exit code ${exit_code:-?})"
-    fi
-  done
+  # Response: {"ok":{"id":"...","name":"..."}}
+  id=$(printf '%s' "$response" | sed 's/.*"id":"\([^"]*\)".*/\1/')
+  name=$(printf '%s' "$response" | sed 's/.*"name":"\([^"]*\)".*/\1/')
+  echo "Started pipeline $id ($name)"
 }

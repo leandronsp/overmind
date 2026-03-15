@@ -316,37 +316,22 @@ defmodule Overmind.APIServerTest do
       assert %{"error" => "enoent"} = result
     end
 
-    test "apply runs pipeline and returns results" do
+    test "apply returns id and name" do
       path = write_toml("""
       [agents.step1]
       command = "echo one"
-
-      [agents.step2]
-      command = "echo two"
-      depends_on = ["step1"]
       """)
 
       result = APIServer.dispatch(%{"cmd" => "apply", "args" => %{"path" => path}})
-      assert %{"ok" => results} = result
-      assert length(results) == 2
-      assert Enum.all?(results, fn r -> r["status"] == "stopped" end)
+      assert %{"ok" => %{"id" => id, "name" => name}} = result
+      assert is_binary(id)
+      assert String.length(id) == 8
+      assert is_binary(name)
     end
 
-    test "apply returns error with completed agents on failure" do
-      path = write_toml("""
-      [agents.ok_step]
-      command = "echo fine"
-
-      [agents.bad_step]
-      command = "sh -c 'exit 1'"
-      depends_on = ["ok_step"]
-      """)
-
-      result = APIServer.dispatch(%{"cmd" => "apply", "args" => %{"path" => path}})
-      assert %{"error" => err} = result
-      assert err["reason"] == "non_zero_exit"
-      assert err["agent"] == "bad_step"
-      assert length(err["completed"]) == 1
+    test "apply returns error for missing file" do
+      result = APIServer.dispatch(%{"cmd" => "apply", "args" => %{"path" => "/nonexistent.toml"}})
+      assert %{"error" => _} = result
     end
   end
 
