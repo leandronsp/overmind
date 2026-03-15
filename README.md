@@ -38,10 +38,12 @@ overmind attach <id>                                 # attach to session (TUI)
 overmind ps                                          # list all missions
 overmind ps --tree                                   # show parent-child hierarchy
 overmind info <id>                                   # show mission info (os_pid, status)
-overmind logs <id>                                   # show mission output
+overmind logs                                        # show all mission logs
+overmind logs <id>                                   # show mission logs
 overmind stop <id>                                   # graceful stop (SIGTERM)
 overmind kill <id>                                   # force kill (SIGKILL)
 overmind kill --cascade <id>                         # kill with all children
+overmind kill --all                                  # kill all missions
 overmind wait <id>                                   # block until mission exits
 overmind shutdown                                    # stop the daemon
 ```
@@ -52,6 +54,27 @@ overmind shutdown                                    # stop the daemon
 overmind run --restart on-failure --max-restarts 3 "flaky-script"
 overmind run --restart always --backoff 2000 "long-running-worker"
 overmind run --activity-timeout 60 "sleep 999"       # kill if no output for 60s
+```
+
+### Declarative Config (Blueprint)
+
+```bash
+overmind agents pipeline.toml                        # list agents in blueprint
+overmind apply pipeline.toml                         # run blueprint (async)
+overmind wait <id>                                   # wait for pipeline to finish
+overmind logs <id>                                   # pipeline execution logs
+```
+
+```toml
+# pipeline.toml
+[agents.researcher]
+command = "list 3 facts about Elixir"
+provider = "claude"
+
+[agents.writer]
+command = "write a summary"
+provider = "claude"
+depends_on = ["researcher"]
 ```
 
 ### Orchestration
@@ -81,7 +104,7 @@ mix e2e            # full E2E tests (daemon, raw commands, claude, sessions)
 | **M1** | Session Agents | Done |
 | **M2** | Self-Healing | Done |
 | **M2.5** | Orchestration Primitives | Done |
-| M3 | Declarative Config | Next |
+| **M3** | Declarative Config | Done |
 | M4 | Full Isolation | |
 | M5 | Shared Akasha | |
 | M6 | Web Dashboard | |

@@ -76,6 +76,11 @@ defmodule Overmind.APIServer do
     end
   end
 
+  def dispatch(%{"cmd" => "logs", "args" => %{"all" => true}}) do
+    {:ok, logs} = Overmind.logs_all()
+    %{"ok" => logs}
+  end
+
   def dispatch(%{"cmd" => "logs"} = req) do
     id = get_in(req, ["args", "id"])
 
@@ -108,6 +113,11 @@ defmodule Overmind.APIServer do
       :ok -> %{"ok" => true}
       {:error, reason} -> %{"error" => to_string(reason)}
     end
+  end
+
+  def dispatch(%{"cmd" => "kill", "args" => %{"all" => true}}) do
+    Overmind.kill_all()
+    %{"ok" => true}
   end
 
   def dispatch(%{"cmd" => "kill"} = req) do
@@ -151,6 +161,30 @@ defmodule Overmind.APIServer do
     case Overmind.unpause(id) do
       :ok -> %{"ok" => true}
       {:error, reason} -> %{"error" => to_string(reason)}
+    end
+  end
+
+  def dispatch(%{"cmd" => "agents"} = req) do
+    path = get_in(req, ["args", "path"])
+
+    case Overmind.Blueprint.agents(path) do
+      {:ok, specs} ->
+        %{"ok" => Enum.map(specs, &format_agent_spec/1)}
+
+      {:error, reason} ->
+        %{"error" => format_blueprint_error(reason)}
+    end
+  end
+
+  def dispatch(%{"cmd" => "apply"} = req) do
+    path = get_in(req, ["args", "path"])
+
+    case Overmind.Blueprint.apply(path) do
+      {:ok, %{id: id, name: name}} ->
+        %{"ok" => %{"id" => id, "name" => name}}
+
+      {:error, reason} ->
+        %{"error" => format_blueprint_error(reason)}
     end
   end
 
@@ -275,4 +309,13 @@ defmodule Overmind.APIServer do
   defp parse_restart("always"), do: :always
   defp parse_restart("never"), do: :never
   defp parse_restart(_), do: :never
+
+  defp format_agent_spec(spec) do
+    %{"name" => spec.name, "command" => spec.command, "depends_on" => spec.depends_on}
+  end
+
+  defp format_blueprint_error({:missing_command, name}), do: "missing command for agent: #{name}"
+  defp format_blueprint_error({:unknown_dependency, name, dep}), do: "agent #{name} depends on unknown agent: #{dep}"
+  defp format_blueprint_error({:invalid_toml, _}), do: "invalid TOML"
+  defp format_blueprint_error(reason), do: to_string(reason)
 end

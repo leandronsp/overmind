@@ -35,7 +35,8 @@ defmodule Overmind.MixProject do
 
   defp deps do
     [
-      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:toml, "~> 0.7"}
     ]
   end
 end

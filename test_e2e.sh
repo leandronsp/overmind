@@ -458,6 +458,52 @@ fi
 $CLI kill "$id" >/dev/null
 sleep 0.5
 
+echo -e "\n${YELLOW}=== Blueprint: agents lists specs ===${NC}"
+agents_out=$($CLI agents examples/blueprint.toml)
+assert_contains "agents has setup" "$agents_out" "setup"
+assert_contains "agents has build" "$agents_out" "build"
+assert_contains "agents has deploy" "$agents_out" "deploy"
+assert_contains "build depends on setup" "$agents_out" "depends on: setup"
+
+echo -e "\n${YELLOW}=== Blueprint: apply returns immediately ===${NC}"
+apply_out=$($CLI apply examples/blueprint.toml)
+assert_contains "apply started" "$apply_out" "Started pipeline"
+# Extract pipeline id from output: "Started pipeline <id> (<name>)"
+pipeline_id=$(printf '%s' "$apply_out" | sed 's/Started pipeline \([^ ]*\).*/\1/')
+# Wait for pipeline to complete
+$CLI wait "$pipeline_id" >/dev/null
+# Check logs contain agent names
+logs_out=$($CLI logs "$pipeline_id")
+assert_contains "logs has setup" "$logs_out" "setup"
+assert_contains "logs has build" "$logs_out" "build"
+assert_contains "logs has deploy" "$logs_out" "deploy"
+# Verify missions actually ran via ps
+ps_out=$($CLI ps)
+assert_contains "setup in ps" "$ps_out" "setup"
+assert_contains "build in ps" "$ps_out" "build"
+assert_contains "deploy in ps" "$ps_out" "deploy"
+
+echo -e "\n${YELLOW}=== Blueprint: apply with failure ===${NC}"
+# Create a failing blueprint in /tmp
+cat > /tmp/overmind_e2e_fail.toml <<'TOML'
+[agents.ok_step]
+command = "echo fine"
+
+[agents.bad_step]
+command = "sh -c 'exit 1'"
+depends_on = ["ok_step"]
+
+[agents.never_runs]
+command = "echo nope"
+depends_on = ["bad_step"]
+TOML
+fail_apply=$($CLI apply /tmp/overmind_e2e_fail.toml)
+fail_id=$(printf '%s' "$fail_apply" | sed 's/Started pipeline \([^ ]*\).*/\1/')
+$CLI wait "$fail_id" >/dev/null
+fail_logs=$($CLI logs "$fail_id")
+assert_contains "fail logs has bad_step" "$fail_logs" "bad_step"
+rm -f /tmp/overmind_e2e_fail.toml
+
 echo -e "\n${YELLOW}=== Cleanup ===${NC}"
 $CLI shutdown
 

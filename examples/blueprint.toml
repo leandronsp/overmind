@@ -1,0 +1,13 @@
+# Example: linear 3-stage pipeline
+# Each stage runs after the previous one completes.
+
+[agents.setup]
+command = "echo 'stage 1: setup complete'"
+
+[agents.build]
+command = "echo 'stage 2: build complete'"
+depends_on = ["setup"]
+
+[agents.deploy]
+command = "echo 'stage 3: deploy complete'"
+depends_on = ["build"]

@@ -301,6 +301,30 @@ defmodule OvermindTest do
     end
   end
 
+  describe "logs_all/0" do
+    test "returns logs from all missions with headers" do
+      {:ok, id1} = Overmind.run("echo first", name: "alpha")
+      {:ok, id2} = Overmind.run("echo second", name: "beta")
+      [{^id1, pid1, _, _, _}] = :ets.lookup(:overmind_missions, id1)
+      [{^id2, pid2, _, _, _}] = :ets.lookup(:overmind_missions, id2)
+      ref1 = Process.monitor(pid1)
+      ref2 = Process.monitor(pid2)
+      assert_receive {:DOWN, ^ref1, :process, ^pid1, :normal}, 500
+      assert_receive {:DOWN, ^ref2, :process, ^pid2, :normal}, 500
+
+      {:ok, logs} = Overmind.logs_all()
+      assert logs =~ "=== alpha (#{id1}) ==="
+      assert logs =~ "=== beta (#{id2}) ==="
+      assert logs =~ "first"
+      assert logs =~ "second"
+    end
+
+    test "returns empty string when no missions" do
+      {:ok, logs} = Overmind.logs_all()
+      assert logs == ""
+    end
+  end
+
   describe "raw_events/1" do
     test "returns empty list for raw provider mission" do
       {:ok, id} = Overmind.run("echo hello")
@@ -446,6 +470,26 @@ defmodule OvermindTest do
 
     test "error for unknown mission" do
       assert {:error, :not_found} = Overmind.kill_cascade("nonexist")
+    end
+  end
+
+  describe "kill_all/0" do
+    test "kills all missions" do
+      {:ok, id1} = Overmind.run("sleep 60")
+      {:ok, id2} = Overmind.run("sleep 60")
+      {:ok, id3} = Overmind.run("sleep 60", parent: id1)
+      Process.sleep(50)
+
+      assert :ok = Overmind.kill_all()
+      Process.sleep(50)
+
+      assert :ets.lookup(:overmind_missions, id1) == []
+      assert :ets.lookup(:overmind_missions, id2) == []
+      assert :ets.lookup(:overmind_missions, id3) == []
+    end
+
+    test "no-op when no missions exist" do
+      assert :ok = Overmind.kill_all()
     end
   end
 
