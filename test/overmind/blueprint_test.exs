@@ -91,11 +91,14 @@ defmodule Overmind.BlueprintTest do
       depends_on = ["parent_agent"]
       """)
 
-      assert {:ok, %{id: id}} = Overmind.Blueprint.apply(path)
-      assert {:ok, _} = Overmind.wait(id)
+      assert {:ok, %{id: runner_id}} = Overmind.Blueprint.apply(path)
+      assert {:ok, _} = Overmind.wait(runner_id)
 
       parent_id = Overmind.Mission.Store.find_by_name("parent_agent")
       child_id = Overmind.Mission.Store.find_by_name("child_agent")
+      # Root agent's parent is the runner
+      assert Overmind.Mission.Store.lookup_parent(parent_id) == runner_id
+      # Dependent agent's parent is its dependency
       assert Overmind.Mission.Store.lookup_parent(child_id) == parent_id
     end
 

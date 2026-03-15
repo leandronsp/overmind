@@ -112,9 +112,12 @@ defmodule Overmind.Blueprint.RunnerTest do
       assert {:exited, :stopped, _, _} = Store.lookup(id)
       assert Store.lookup_exit_code(id) == 0
 
-      # Verify parent hierarchy
-      b_id = Store.find_by_name("step_b")
       a_id = Store.find_by_name("step_a")
+      b_id = Store.find_by_name("step_b")
+
+      # Root agent's parent is the runner
+      assert Store.lookup_parent(a_id) == id
+      # Dependent agent's parent is its dependency
       assert Store.lookup_parent(b_id) == a_id
     end
   end

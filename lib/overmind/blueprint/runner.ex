@@ -53,7 +53,7 @@ defmodule Overmind.Blueprint.Runner do
     Store.insert_name(id, name)
 
     runner = self()
-    worker = spawn_link(fn -> run_pipeline(runner, specs) end)
+    worker = spawn_link(fn -> run_pipeline(runner, id, specs) end)
 
     {:ok,
      %__MODULE__{
@@ -133,16 +133,16 @@ defmodule Overmind.Blueprint.Runner do
   # Worker pipeline logic — runs in a separate process so the GenServer
   # stays responsive for get_logs, stop, kill.
 
-  defp run_pipeline(runner, specs) do
-    run_pipeline(runner, specs, [])
+  defp run_pipeline(runner, runner_id, specs) do
+    run_pipeline(runner, runner_id, specs, [])
   end
 
-  defp run_pipeline(runner, [], _completed) do
+  defp run_pipeline(runner, _runner_id, [], _completed) do
     Kernel.send(runner, {:pipeline_done, :ok})
   end
 
-  defp run_pipeline(runner, [spec | rest], completed) do
-    opts = build_opts(spec, completed)
+  defp run_pipeline(runner, runner_id, [spec | rest], completed) do
+    opts = build_opts(spec, runner_id, completed)
 
     case Overmind.run(spec.command, opts) do
       {:ok, id} ->
@@ -152,7 +152,7 @@ defmodule Overmind.Blueprint.Runner do
         case wait_result.status do
           :stopped ->
             Kernel.send(runner, {:pipeline_log, "#{spec.name} stopped"})
-            run_pipeline(runner, rest, [{spec.name, id} | completed])
+            run_pipeline(runner, runner_id, rest, [{spec.name, id} | completed])
 
           _ ->
             Kernel.send(runner, {:pipeline_log, "#{spec.name} #{wait_result.status}"})
@@ -165,18 +165,22 @@ defmodule Overmind.Blueprint.Runner do
     end
   end
 
-  defp build_opts(spec, completed) do
+  # Agents with depends_on get the dependency as parent.
+  # Agents without depends_on get the Runner as parent.
+  defp build_opts(spec, runner_id, completed) do
     [provider: spec.provider, type: spec.type, name: spec.name, restart_policy: spec.restart_policy]
     |> maybe_add(:cwd, spec.cwd)
-    |> maybe_add_parent(spec.depends_on, completed)
+    |> add_parent(spec.depends_on, runner_id, completed)
   end
 
   defp maybe_add(opts, _key, nil), do: opts
   defp maybe_add(opts, key, val), do: Keyword.put(opts, key, val)
 
-  defp maybe_add_parent(opts, [], _completed), do: opts
+  defp add_parent(opts, [], runner_id, _completed) do
+    Keyword.put(opts, :parent, runner_id)
+  end
 
-  defp maybe_add_parent(opts, [first_dep | _], completed) do
+  defp add_parent(opts, [first_dep | _], _runner_id, completed) do
     case List.keyfind(completed, first_dep, 0) do
       {_, parent_id} -> Keyword.put(opts, :parent, parent_id)
       nil -> opts
