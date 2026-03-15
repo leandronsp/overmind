@@ -1,0 +1,13 @@
+[agents.researcher]
+command = "list 3 interesting facts about Elixir's BEAM VM, very briefly"
+provider = "claude"
+
+[agents.writer]
+command = "write a short haiky about distributed systems"
+provider = "claude"
+depends_on = ["researcher"]
+
+[agents.reviewer]
+command = "say one sentence about why fault tolerance systems"
+provider = "claude"
+depends_on = ["writer"]
