@@ -6,7 +6,7 @@ defmodule Overmind.Blueprint do
 
   @spec agents(String.t()) :: {:ok, [Parser.agent_spec()]} | {:error, term()}
   def agents(path) do
-    with {:ok, content} <- read_file(path),
+    with {:ok, content} <- File.read(path),
          {:ok, specs} <- Parser.parse(content) do
       {:ok, specs}
     end
@@ -14,18 +14,10 @@ defmodule Overmind.Blueprint do
 
   @spec apply(String.t()) :: {:ok, %{id: String.t(), name: String.t()}} | {:error, term()}
   def apply(path) do
-    with {:ok, content} <- read_file(path),
+    with {:ok, content} <- File.read(path),
          {:ok, specs} <- Parser.parse(content),
          {:ok, sorted} <- DAG.topo_sort(specs) do
       start_runner(path, sorted)
-    end
-  end
-
-  defp read_file(path) do
-    case File.read(path) do
-      {:ok, content} -> {:ok, content}
-      {:error, :enoent} -> {:error, :enoent}
-      {:error, reason} -> {:error, reason}
     end
   end
 

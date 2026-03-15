@@ -180,10 +180,13 @@ defmodule Overmind do
     output =
       Store.list_all()
       |> Enum.sort_by(fn {_, _, _, _, started_at} -> started_at end)
-      |> Enum.map(fn {id, _, _, _, _} ->
+      |> Enum.flat_map(fn {id, _, _, _, _} ->
         name = Store.lookup_name(id) || id
-        {:ok, logs} = Client.get_logs(id)
-        "=== #{name} (#{id}) ===\n#{logs}"
+
+        case Client.get_logs(id) do
+          {:ok, logs} -> ["=== #{name} (#{id}) ===\n#{logs}"]
+          {:error, _} -> []
+        end
       end)
       |> Enum.join("\n")
 
@@ -218,6 +221,7 @@ defmodule Overmind do
   @spec kill_all() :: :ok
   def kill_all do
     Store.list_all()
+    |> Enum.filter(fn {id, _, _, _, _} -> Store.lookup_parent(id) == nil end)
     |> Enum.each(fn {id, _, _, _, _} -> Client.kill_cascade(id) end)
   end
 

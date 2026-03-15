@@ -105,16 +105,15 @@ defmodule Overmind.Blueprint.Runner do
   end
 
   @impl true
+  def handle_info({:EXIT, pid, _reason}, %{worker: pid, stopping: true} = state) do
+    {:stop, :normal, %{state | worker: nil}}
+  end
+
+  @impl true
   def handle_info({:EXIT, pid, _reason}, %{worker: pid} = state) do
-    # Worker crashed unexpectedly
-    state = %{state | worker: nil}
-
-    unless state.stopping do
-      Store.insert(state.id, {self(), state.command, :crashed, state.started_at})
-      Store.insert_exit_code(state.id, 1)
-    end
-
-    {:stop, :normal, state}
+    Store.insert(state.id, {self(), state.command, :crashed, state.started_at})
+    Store.insert_exit_code(state.id, 1)
+    {:stop, :normal, %{state | worker: nil}}
   end
 
   @impl true
@@ -147,22 +146,27 @@ defmodule Overmind.Blueprint.Runner do
     case Overmind.run(spec.command, opts) do
       {:ok, id} ->
         Kernel.send(runner, {:pipeline_log, "started #{spec.name} (#{id})"})
-        {:ok, wait_result} = Overmind.wait(id)
-
-        case wait_result.status do
-          :stopped ->
-            Kernel.send(runner, {:pipeline_log, "#{spec.name} stopped"})
-            run_pipeline(runner, runner_id, rest, [{spec.name, id} | completed])
-
-          _ ->
-            Kernel.send(runner, {:pipeline_log, "#{spec.name} #{wait_result.status}"})
-            Kernel.send(runner, {:pipeline_done, {:error, spec.name}})
-        end
+        handle_wait(Overmind.wait(id), id, runner, runner_id, spec, rest, completed)
 
       {:error, reason} ->
         Kernel.send(runner, {:pipeline_log, "failed to start #{spec.name}: #{reason}"})
         Kernel.send(runner, {:pipeline_done, {:error, spec.name}})
     end
+  end
+
+  defp handle_wait({:ok, %{status: :stopped}}, id, runner, runner_id, spec, rest, completed) do
+    Kernel.send(runner, {:pipeline_log, "#{spec.name} stopped"})
+    run_pipeline(runner, runner_id, rest, [{spec.name, id} | completed])
+  end
+
+  defp handle_wait({:ok, wait_result}, _id, runner, _runner_id, spec, _rest, _completed) do
+    Kernel.send(runner, {:pipeline_log, "#{spec.name} #{wait_result.status}"})
+    Kernel.send(runner, {:pipeline_done, {:error, spec.name}})
+  end
+
+  defp handle_wait({:error, reason}, _id, runner, _runner_id, spec, _rest, _completed) do
+    Kernel.send(runner, {:pipeline_log, "wait failed for #{spec.name}: #{reason}"})
+    Kernel.send(runner, {:pipeline_done, {:error, spec.name}})
   end
 
   # Agents with depends_on get the dependency as parent.

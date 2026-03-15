@@ -53,6 +53,8 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │   │   │   └── name_test.exs
 │   │   ├── blueprint_test.exs
 │   │   ├── blueprint/
+│   │   │   ├── dag_test.exs
+│   │   │   ├── parser_test.exs
 │   │   │   └── runner_test.exs
 │   │   └── provider/
 │   │       ├── raw_test.exs
