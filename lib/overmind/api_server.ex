@@ -154,6 +154,37 @@ defmodule Overmind.APIServer do
     end
   end
 
+  def dispatch(%{"cmd" => "agents"} = req) do
+    path = get_in(req, ["args", "path"])
+
+    case Overmind.Blueprint.agents(path) do
+      {:ok, specs} ->
+        %{"ok" => Enum.map(specs, &format_agent_spec/1)}
+
+      {:error, reason} ->
+        %{"error" => format_blueprint_error(reason)}
+    end
+  end
+
+  def dispatch(%{"cmd" => "apply"} = req) do
+    path = get_in(req, ["args", "path"])
+
+    case Overmind.Blueprint.apply(path) do
+      {:ok, results} ->
+        %{"ok" => Enum.map(results, &format_agent_result/1)}
+
+      {:error, %{reason: reason, agent: agent, completed: completed}} ->
+        %{"error" => %{
+          "reason" => to_string(reason),
+          "agent" => agent,
+          "completed" => Enum.map(completed, &format_agent_result/1)
+        }}
+
+      {:error, reason} ->
+        %{"error" => to_string(reason)}
+    end
+  end
+
   def dispatch(%{"cmd" => "status"}) do
     %{"ok" => Overmind.status()}
   end
@@ -275,4 +306,17 @@ defmodule Overmind.APIServer do
   defp parse_restart("always"), do: :always
   defp parse_restart("never"), do: :never
   defp parse_restart(_), do: :never
+
+  defp format_agent_spec(spec) do
+    %{"name" => spec.name, "command" => spec.command, "depends_on" => spec.depends_on}
+  end
+
+  defp format_agent_result(result) do
+    %{"name" => result.name, "id" => result.id, "status" => to_string(result.status), "exit_code" => nil_to_null(result.exit_code)}
+  end
+
+  defp format_blueprint_error({:missing_command, name}), do: "missing command for agent: #{name}"
+  defp format_blueprint_error({:unknown_dependency, name, dep}), do: "agent #{name} depends on unknown agent: #{dep}"
+  defp format_blueprint_error({:invalid_toml, _}), do: "invalid TOML"
+  defp format_blueprint_error(reason), do: to_string(reason)
 end

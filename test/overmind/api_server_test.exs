@@ -294,6 +294,60 @@ defmodule Overmind.APIServerTest do
       result = APIServer.dispatch(%{})
       assert %{"error" => "invalid request"} = result
     end
+
+    test "agents returns specs from valid blueprint" do
+      path = write_toml("""
+      [agents.greeter]
+      command = "echo hello"
+
+      [agents.worker]
+      command = "echo work"
+      depends_on = ["greeter"]
+      """)
+
+      result = APIServer.dispatch(%{"cmd" => "agents", "args" => %{"path" => path}})
+      assert %{"ok" => specs} = result
+      assert length(specs) == 2
+      assert Enum.any?(specs, fn s -> s["name"] == "greeter" end)
+    end
+
+    test "agents returns error for missing file" do
+      result = APIServer.dispatch(%{"cmd" => "agents", "args" => %{"path" => "/nonexistent.toml"}})
+      assert %{"error" => "enoent"} = result
+    end
+
+    test "apply runs pipeline and returns results" do
+      path = write_toml("""
+      [agents.step1]
+      command = "echo one"
+
+      [agents.step2]
+      command = "echo two"
+      depends_on = ["step1"]
+      """)
+
+      result = APIServer.dispatch(%{"cmd" => "apply", "args" => %{"path" => path}})
+      assert %{"ok" => results} = result
+      assert length(results) == 2
+      assert Enum.all?(results, fn r -> r["status"] == "stopped" end)
+    end
+
+    test "apply returns error with completed agents on failure" do
+      path = write_toml("""
+      [agents.ok_step]
+      command = "echo fine"
+
+      [agents.bad_step]
+      command = "sh -c 'exit 1'"
+      depends_on = ["ok_step"]
+      """)
+
+      result = APIServer.dispatch(%{"cmd" => "apply", "args" => %{"path" => path}})
+      assert %{"error" => err} = result
+      assert err["reason"] == "non_zero_exit"
+      assert err["agent"] == "bad_step"
+      assert length(err["completed"]) == 1
+    end
   end
 
   describe "socket server" do
@@ -339,5 +393,12 @@ defmodule Overmind.APIServerTest do
     test "cleans up socket file on stop", %{socket_path: path} do
       assert File.exists?(path)
     end
+  end
+
+  defp write_toml(content) do
+    path = Path.join(System.tmp_dir!(), "api_blueprint_test_#{:rand.uniform(1_000_000)}.toml")
+    File.write!(path, content)
+    on_exit(fn -> File.rm(path) end)
+    path
   end
 end

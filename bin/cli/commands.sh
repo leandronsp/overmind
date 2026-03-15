@@ -272,5 +272,7 @@ Commands:
   kill <id> --cascade      Kill mission and all descendants
   status                   Show daemon health and mission summary
   monitor                  Live-refresh status + mission list (Ctrl+C to exit)
+  agents <file.toml>       List agents defined in a blueprint
+  apply <file.toml>        Run a blueprint pipeline (topological order)
 EOF
 }

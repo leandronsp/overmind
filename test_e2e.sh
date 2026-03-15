@@ -458,6 +458,43 @@ fi
 $CLI kill "$id" >/dev/null
 sleep 0.5
 
+echo -e "\n${YELLOW}=== Blueprint: agents lists specs ===${NC}"
+agents_out=$($CLI agents examples/blueprint.toml)
+assert_contains "agents has setup" "$agents_out" "setup"
+assert_contains "agents has build" "$agents_out" "build"
+assert_contains "agents has deploy" "$agents_out" "deploy"
+assert_contains "build depends on setup" "$agents_out" "depends on: setup"
+
+echo -e "\n${YELLOW}=== Blueprint: apply runs pipeline ===${NC}"
+apply_out=$($CLI apply examples/blueprint.toml)
+assert_contains "step1 stopped" "$apply_out" "setup: stopped"
+assert_contains "step2 stopped" "$apply_out" "build: stopped"
+assert_contains "step3 stopped" "$apply_out" "deploy: stopped"
+# Verify missions actually ran via ps
+ps_out=$($CLI ps)
+assert_contains "setup in ps" "$ps_out" "setup"
+assert_contains "build in ps" "$ps_out" "build"
+assert_contains "deploy in ps" "$ps_out" "deploy"
+
+echo -e "\n${YELLOW}=== Blueprint: apply with failure ===${NC}"
+# Create a failing blueprint in /tmp
+cat > /tmp/overmind_e2e_fail.toml <<'TOML'
+[agents.ok_step]
+command = "echo fine"
+
+[agents.bad_step]
+command = "sh -c 'exit 1'"
+depends_on = ["ok_step"]
+
+[agents.never_runs]
+command = "echo nope"
+depends_on = ["bad_step"]
+TOML
+fail_out=$($CLI apply /tmp/overmind_e2e_fail.toml 2>&1 || true)
+assert_contains "pipeline failed" "$fail_out" "Pipeline failed"
+assert_contains "failed at bad_step" "$fail_out" "bad_step"
+rm -f /tmp/overmind_e2e_fail.toml
+
 echo -e "\n${YELLOW}=== Cleanup ===${NC}"
 $CLI shutdown
 

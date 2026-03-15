@@ -14,6 +14,7 @@ LOGFILE="$HOME/.overmind/daemon.log"
 . "$BASEDIR/cli/commands.sh"
 . "$BASEDIR/cli/orchestration.sh"
 . "$BASEDIR/cli/status.sh"
+. "$BASEDIR/cli/blueprint.sh"
 
 case "${1:-}" in
   start)       cmd_start ;;
@@ -39,6 +40,8 @@ case "${1:-}" in
   detach)      cmd_detach "$2" ;;
   status)      cmd_status ;;
   monitor)     cmd_monitor ;;
+  agents)      cmd_agents "$2" ;;
+  apply)       cmd_apply "$2" ;;
   "")          usage ;;
   *)           echo "Unknown command: $1"; usage ;;
 esac
