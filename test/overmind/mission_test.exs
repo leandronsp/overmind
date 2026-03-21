@@ -976,6 +976,20 @@ defmodule Overmind.MissionTest do
     end
   end
 
+  describe "trap_exit" do
+    test "terminate persists logs to ETS on GenServer shutdown" do
+      Process.flag(:trap_exit, true)
+      id = Mission.generate_id()
+      {:ok, pid} = Mission.start_link(id: id, command: "sh -c 'echo hello; sleep 60'")
+      Process.sleep(100)
+      ref = Process.monitor(pid)
+      Process.exit(pid, :shutdown)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :shutdown}, 1000
+
+      assert Overmind.Mission.Store.stored_logs(id) =~ "hello"
+    end
+  end
+
   describe "exit detection" do
     test "exit 0 sets :stopped status in ETS" do
       id = Mission.generate_id()

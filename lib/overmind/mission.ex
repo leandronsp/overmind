@@ -116,6 +116,7 @@ defmodule Overmind.Mission do
     restart_policy: restart_policy, max_restarts: max_restarts, max_seconds: max_seconds,
     backoff_ms: backoff_ms, activity_timeout: activity_timeout, parent: parent
   }) do
+    Process.flag(:trap_exit, true)
     port_command = build_port_command(type, provider, command)
     port_opts = [:binary, :exit_status, :stderr_to_stdout] ++ build_env(id, name) ++ maybe_cd(cwd)
     port = Port.open({:spawn, port_command}, port_opts)
@@ -318,6 +319,13 @@ defmodule Overmind.Mission do
          activity_timer_ref: activity_timer_ref,
          last_activity_at: last_activity_at
      }}
+  end
+
+  # Port link sends {:EXIT, port, reason} on port death. Already handled
+  # by exit_status — ignore to prevent GenServer crash when trapping exits.
+  @impl true
+  def handle_info({:EXIT, _pid, _reason}, state) do
+    {:noreply, state}
   end
 
   @impl true
