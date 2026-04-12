@@ -96,6 +96,23 @@ defmodule Overmind.APIServerTest do
       assert %{"error" => "parent_not_found"} = result
     end
 
+    test "run with model stores model in ETS" do
+      result =
+        APIServer.dispatch(%{
+          "cmd" => "run",
+          "args" => %{"command" => "sleep 60", "model" => "haiku"}
+        })
+
+      assert %{"ok" => %{"id" => id}} = result
+      assert Overmind.Mission.Store.lookup_model(id) == "haiku"
+    end
+
+    test "run without model defaults to nil" do
+      result = APIServer.dispatch(%{"cmd" => "run", "args" => %{"command" => "sleep 60"}})
+      assert %{"ok" => %{"id" => id}} = result
+      assert Overmind.Mission.Store.lookup_model(id) == nil
+    end
+
     test "run with empty command returns error" do
       result = APIServer.dispatch(%{"cmd" => "run", "args" => %{"command" => ""}})
       assert %{"error" => "empty_command"} = result
@@ -309,6 +326,30 @@ defmodule Overmind.APIServerTest do
       assert %{"ok" => specs} = result
       assert length(specs) == 2
       assert Enum.any?(specs, fn s -> s["name"] == "greeter" end)
+    end
+
+    test "agents includes model in spec when present" do
+      path = write_toml("""
+      [agents.researcher]
+      command = "echo research"
+      provider = "claude"
+      model = "haiku"
+      """)
+
+      result = APIServer.dispatch(%{"cmd" => "agents", "args" => %{"path" => path}})
+      assert %{"ok" => [spec]} = result
+      assert spec["model"] == "haiku"
+    end
+
+    test "agents omits model from spec when absent" do
+      path = write_toml("""
+      [agents.worker]
+      command = "echo work"
+      """)
+
+      result = APIServer.dispatch(%{"cmd" => "agents", "args" => %{"path" => path}})
+      assert %{"ok" => [spec]} = result
+      refute Map.has_key?(spec, "model")
     end
 
     test "agents returns error for missing file" do

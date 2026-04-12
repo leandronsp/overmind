@@ -80,6 +80,26 @@ defmodule OvermindTest do
     end
   end
 
+  describe "run/2 with model" do
+    test "model option stores model in ETS" do
+      {:ok, id} = Overmind.run("sleep 60", model: "haiku")
+      assert Overmind.Mission.Store.lookup_model(id) == "haiku"
+    end
+
+    test "model defaults to nil when not provided" do
+      {:ok, id} = Overmind.run("sleep 60")
+      assert Overmind.Mission.Store.lookup_model(id) == nil
+    end
+
+    test "model visible in info" do
+      {:ok, id} = Overmind.run("sleep 60", model: "sonnet")
+      Process.sleep(50)
+
+      {:ok, info} = Overmind.info(id)
+      assert info.model == "sonnet"
+    end
+  end
+
   describe "run/2 with restart opts" do
     test "accepts restart_policy option" do
       {:ok, id} = Overmind.run("sleep 60", restart_policy: :on_failure)

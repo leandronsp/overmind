@@ -168,6 +168,17 @@ defmodule Overmind.Mission.StoreTest do
     end
   end
 
+  describe "insert_model/2 and lookup_model/1" do
+    test "stores and retrieves model" do
+      Store.insert_model("m1", "haiku")
+      assert Store.lookup_model("m1") == "haiku"
+    end
+
+    test "returns nil for unknown id" do
+      assert Store.lookup_model("nope") == nil
+    end
+  end
+
   describe "insert_cwd/2 and lookup_cwd/1" do
     test "stores and retrieves cwd" do
       Store.insert_cwd("m1", "/tmp")
@@ -273,6 +284,7 @@ defmodule Overmind.Mission.StoreTest do
       Store.insert_session_id("m1", "sess-abc")
       Store.insert_attached("m1", true)
       Store.insert_cwd("m1", "/tmp")
+      Store.insert_model("m1", "haiku")
       Store.insert_name("m1", "bold-arc")
       Store.insert_restart_policy("m1", :on_failure)
       Store.insert_restart_count("m1", 2)
@@ -287,6 +299,7 @@ defmodule Overmind.Mission.StoreTest do
       assert Store.lookup_session_id("m1") == nil
       assert Store.lookup_attached("m1") == false
       assert Store.lookup_cwd("m1") == nil
+      assert Store.lookup_model("m1") == nil
       assert Store.lookup_name("m1") == nil
       assert Store.lookup_restart_policy("m1") == :never
       assert Store.lookup_restart_count("m1") == 0

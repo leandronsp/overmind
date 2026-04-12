@@ -122,6 +122,40 @@ defmodule Overmind.Blueprint.RunnerTest do
     end
   end
 
+  describe "model in spec" do
+    test "passes model from spec to spawned mission" do
+      id = Overmind.Mission.generate_id()
+
+      {:ok, pid} = start_runner(
+        id: id,
+        name: "test-runner",
+        specs: [%{make_spec("modeled", "echo hi") | model: "haiku"}]
+      )
+
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 2000
+
+      agent_id = Store.find_by_name("modeled")
+      assert Store.lookup_model(agent_id) == "haiku"
+    end
+
+    test "nil model in spec means no model stored" do
+      id = Overmind.Mission.generate_id()
+
+      {:ok, pid} = start_runner(
+        id: id,
+        name: "test-runner",
+        specs: [make_spec("plain", "echo hi")]
+      )
+
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 2000
+
+      agent_id = Store.find_by_name("plain")
+      assert Store.lookup_model(agent_id) == nil
+    end
+  end
+
   describe "stop and kill" do
     test "stop gracefully stops runner" do
       id = Overmind.Mission.generate_id()

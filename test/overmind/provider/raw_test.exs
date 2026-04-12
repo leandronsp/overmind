@@ -11,6 +11,10 @@ defmodule Overmind.Provider.RawTest do
     test "escapes single quotes" do
       assert Raw.build_command("echo 'hi'") == "sh -c 'echo '\\''hi'\\'''"
     end
+
+    test "ignores opts like model" do
+      assert Raw.build_command("echo hello", model: "haiku") == "sh -c 'echo hello'"
+    end
   end
 
   describe "parse_line/1" do

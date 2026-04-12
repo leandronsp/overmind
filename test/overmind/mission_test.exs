@@ -1045,4 +1045,27 @@ defmodule Overmind.MissionTest do
       assert is_list(events)
     end
   end
+
+  describe "restart preserves model" do
+    test "model persists across restarts" do
+      id = Mission.generate_id()
+
+      {:ok, pid} =
+        Mission.start_link(
+          id: id,
+          command: "false",
+          model: "haiku",
+          restart_policy: :on_failure,
+          max_restarts: 1,
+          backoff_ms: 50
+        )
+
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 3000
+
+      # Model survives restart cycle
+      assert Overmind.Mission.Store.lookup_model(id) == "haiku"
+      assert Overmind.Mission.Store.lookup_restart_count(id) == 1
+    end
+  end
 end
