@@ -42,7 +42,7 @@ defmodule Overmind.Blueprint.ParserTest do
       assert {:error, {:unknown_dependency, "worker", "ghost"}} = Parser.parse(toml)
     end
 
-    test "defaults: provider=Raw, type=task, cwd=nil, restart=never, depends_on=[]" do
+    test "defaults: provider=Raw, type=task, cwd=nil, model=nil, restart=never, depends_on=[]" do
       toml = """
       [agents.minimal]
       command = "echo hi"
@@ -52,8 +52,21 @@ defmodule Overmind.Blueprint.ParserTest do
       assert spec.provider == Overmind.Provider.Raw
       assert spec.type == :task
       assert spec.cwd == nil
+      assert spec.model == nil
       assert spec.restart_policy == :never
       assert spec.depends_on == []
+    end
+
+    test "parses model field" do
+      toml = """
+      [agents.researcher]
+      command = "echo research"
+      provider = "claude"
+      model = "haiku"
+      """
+
+      assert {:ok, [spec]} = Parser.parse(toml)
+      assert spec.model == "haiku"
     end
 
     test "parses all optional fields" do

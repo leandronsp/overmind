@@ -9,6 +9,7 @@ cmd_run() {
   provider="raw"
   cwd=""
   name=""
+  model=""
   parent=""
   restart=""
   max_restarts=""
@@ -23,6 +24,7 @@ cmd_run() {
       --provider)         provider="$2"; shift 2 ;;
       --cwd)              cwd="$2"; shift 2 ;;
       --name)             name="$2"; shift 2 ;;
+      --model)            model="$2"; shift 2 ;;
       --parent)           parent="$2"; shift 2 ;;
       --restart)          restart="$2"; shift 2 ;;
       --max-restarts)     max_restarts="$2"; shift 2 ;;
@@ -46,6 +48,7 @@ cmd_run() {
   extra=""
   extra="$extra$(maybe_json_str "cwd" "$cwd")"
   extra="$extra$(maybe_json_str "name" "$name")"
+  extra="$extra$(maybe_json_str "model" "$model")"
   extra="$extra$(maybe_json_str "parent" "$parent")"
   extra="$extra$(maybe_json_str "restart" "$restart")"
   extra="$extra$(maybe_json_int "max_restarts" "$max_restarts")"
@@ -265,6 +268,7 @@ Commands:
   run --provider claude    Spawn with Claude provider
   run --cwd <path>         Set working directory
   run --name <name>        Set agent name (auto-generated if omitted)
+  run --model <model>      Set Claude model (e.g. haiku, sonnet, opus)
   run --parent <id>        Set parent mission (for hierarchy)
   run --restart <policy>   Restart policy: never, on-failure, always
   run --max-restarts <n>   Max restart attempts within window (0 = unlimited, default 5)

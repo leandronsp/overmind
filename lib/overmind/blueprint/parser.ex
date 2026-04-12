@@ -7,6 +7,7 @@ defmodule Overmind.Blueprint.Parser do
           provider: module(),
           type: :task | :session,
           cwd: String.t() | nil,
+          model: String.t() | nil,
           restart_policy: :never | :on_failure | :always,
           depends_on: [String.t()]
         }
@@ -32,6 +33,7 @@ defmodule Overmind.Blueprint.Parser do
         provider: parse_provider(Map.get(config, "provider", "raw")),
         type: parse_type(Map.get(config, "type", "task")),
         cwd: Map.get(config, "cwd"),
+        model: Map.get(config, "model"),
         restart_policy: parse_restart(Map.get(config, "restart", "never")),
         depends_on: Map.get(config, "depends_on", [])
       }

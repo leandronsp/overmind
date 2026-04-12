@@ -174,6 +174,7 @@ defmodule Overmind.Blueprint.Runner do
   defp build_opts(spec, runner_id, completed) do
     [provider: spec.provider, type: spec.type, name: spec.name, restart_policy: spec.restart_policy]
     |> maybe_add(:cwd, spec.cwd)
+    |> maybe_add(:model, spec.model)
     |> add_parent(spec.depends_on, runner_id, completed)
   end
 

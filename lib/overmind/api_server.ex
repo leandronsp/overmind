@@ -315,8 +315,12 @@ defmodule Overmind.APIServer do
   defp parse_restart(_), do: :never
 
   defp format_agent_spec(spec) do
-    %{"name" => spec.name, "command" => spec.command, "depends_on" => spec.depends_on}
+    base = %{"name" => spec.name, "command" => spec.command, "depends_on" => spec.depends_on}
+    maybe_add_to_map(base, "model", spec.model)
   end
+
+  defp maybe_add_to_map(map, _key, nil), do: map
+  defp maybe_add_to_map(map, key, val), do: Map.put(map, key, val)
 
   defp format_blueprint_error({:missing_command, name}), do: "missing command for agent: #{name}"
   defp format_blueprint_error({:unknown_dependency, name, dep}), do: "agent #{name} depends on unknown agent: #{dep}"

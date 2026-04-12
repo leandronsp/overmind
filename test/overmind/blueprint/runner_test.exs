@@ -179,6 +179,7 @@ defmodule Overmind.Blueprint.RunnerTest do
       provider: Overmind.Provider.Raw,
       type: :task,
       cwd: nil,
+      model: nil,
       restart_policy: :never,
       depends_on: []
     }
