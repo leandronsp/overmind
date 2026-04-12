@@ -197,14 +197,63 @@ cmd_kill() {
 }
 
 cmd_send() {
-  id="$1"
-  shift
-  message="$*"
+  id=""
+  message=""
+  wait=""
+  json_output=""
+  timeout=""
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --wait)    wait="true"; shift ;;
+      --json)    json_output="true"; shift ;;
+      --timeout) timeout="$2"; shift 2 ;;
+      *)
+        if [ -z "$id" ]; then
+          id="$1"
+        else
+          if [ -z "$message" ]; then
+            message="$1"
+          else
+            message="$message $1"
+          fi
+        fi
+        shift
+        ;;
+    esac
+  done
+
   eid=$(escape_json "$id")
   emsg=$(escape_json "$message")
-  response=$(send_cmd "{\"cmd\":\"send\",\"args\":{\"id\":\"$eid\",\"message\":\"$emsg\"}}") || return 1
-  extract_ok "$response" > /dev/null || return 1
-  echo "Sent to mission $id"
+
+  if [ -n "$wait" ]; then
+    extra=",\"wait\":true"
+    if [ -n "$timeout" ]; then
+      extra="$extra,\"timeout\":$timeout"
+    fi
+
+    response=$(send_cmd "{\"cmd\":\"send\",\"args\":{\"id\":\"$eid\",\"message\":\"$emsg\"$extra}}") || return 1
+
+    if printf '%s' "$response" | grep -q '"error"'; then
+      err=$(printf '%s' "$response" | sed 's/.*"error":"\([^"]*\)".*/\1/')
+      echo "Error: $err" >&2
+      return 1
+    fi
+
+    if [ "${json_output:-}" = "true" ]; then
+      # Return full result JSON
+      inner=$(printf '%s' "$response" | sed 's/^{"ok"://' | sed 's/}$//')
+      printf '%s\n' "$inner"
+    else
+      # Extract just the text field
+      text=$(printf '%s' "$response" | sed 's/.*"text":"\([^"]*\)".*/\1/')
+      unescape_json "$text"
+    fi
+  else
+    response=$(send_cmd "{\"cmd\":\"send\",\"args\":{\"id\":\"$eid\",\"message\":\"$emsg\"}}") || return 1
+    extract_ok "$response" > /dev/null || return 1
+    echo "Sent to mission $id"
+  fi
 }
 
 cmd_detach() { simple_id_cmd "unpause" "$1" "Detached from"; }
@@ -279,6 +328,9 @@ Commands:
   wait <id>                Wait for mission to finish (returns exit code)
   wait <id> --timeout <ms> Wait with timeout
   send <id> <message>      Send a message to a session
+  send <id> <msg> --wait   Send and wait for response (blocking)
+  send <id> <msg> --wait --json  Return full result as JSON
+  send <id> <msg> --wait --timeout <ms>  Set wait timeout (default 60000)
   attach <id>              Attach to a session (TUI)
   detach <id>              Unpause after manual attach
   ps                       List all missions
