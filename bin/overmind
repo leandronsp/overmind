@@ -36,6 +36,7 @@ case "${1:-}" in
   kill)        shift; cmd_kill "$@" ;;
   wait)        shift; cmd_wait "$@" ;;
   send)        shift; cmd_send "$@" ;;
+  subscribe)   cmd_subscribe "$2" ;;
   attach)      cmd_attach "$2" ;;
   detach)      cmd_detach "$2" ;;
   status)      cmd_status ;;

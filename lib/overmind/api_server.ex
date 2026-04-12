@@ -9,7 +9,7 @@ defmodule Overmind.APIServer do
     GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
   end
 
-  @spec dispatch(map()) :: map()
+  @spec dispatch(map()) :: map() | {:stream, String.t()}
   def dispatch(%{"cmd" => "run"} = req) do
     args = Map.get(req, "args", %{})
     command = Map.get(args, "command", "")

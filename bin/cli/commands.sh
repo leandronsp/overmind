@@ -256,6 +256,24 @@ cmd_send() {
   fi
 }
 
+cmd_subscribe() {
+  id="$1"
+  if [ -z "$id" ]; then
+    echo "Missing id. Usage: overmind subscribe <id>"
+    return 1
+  fi
+
+  if [ ! -S "$SOCK" ]; then
+    echo "Daemon not running. Start with: overmind start" >&2
+    return 1
+  fi
+
+  eid=$(escape_json "$id")
+  # Long-lived connection: send subscribe command, then read NDJSON lines
+  # until the mission exits or the user presses Ctrl+C
+  printf '{"cmd":"subscribe","args":{"id":"%s"}}\n' "$eid" | nc -U "$SOCK"
+}
+
 cmd_detach() { simple_id_cmd "unpause" "$1" "Detached from"; }
 
 cmd_attach() {
@@ -331,6 +349,7 @@ Commands:
   send <id> <msg> --wait   Send and wait for response (blocking)
   send <id> <msg> --wait --json  Return full result as JSON
   send <id> <msg> --wait --timeout <ms>  Set wait timeout (default 60000)
+  subscribe <id>           Stream mission events as NDJSON (until exit or Ctrl+C)
   attach <id>              Attach to a session (TUI)
   detach <id>              Unpause after manual attach
   ps                       List all missions
