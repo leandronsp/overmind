@@ -238,6 +238,7 @@ Typespecs serve as deterministic constraints on LLM-generated code — the type 
 - **M2** — Self-Healing (done): restart policies (`--restart on-failure|always`), exponential backoff (`--backoff`), stall detection (`--activity-timeout`), `--max-restarts`, session resume via `--resume`, `info` command (os_pid)
 - **M2.5** — Orchestration Primitives (done): `wait` (monitor-based blocking), `--parent` hierarchy, `ps --tree`, `kill --cascade`, exit code storage
 - **M3** — Declarative Config (done): Blueprint TOML, `agents` (list specs), `apply` (async pipeline via Runner GenServer), `depends_on` DAG with cycle detection, `kill --all`, `logs` (all agents)
+- **M3.5** — Event Streaming (done): Registry-based PubSub, `send --wait` (blocking send with timeout), `subscribe` (NDJSON event stream), programmatic event subscription
 - **M4** — Full Isolation: worktree + port allocation + Docker
 - **M5** — Shared Akasha: distributed memory
 - **M6** — Web Dashboard: Phoenix LiveView

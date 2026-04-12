@@ -34,6 +34,10 @@ overmind run --name worker --cwd ~/project "make"   # named, with working direct
 overmind claude run "explain OTP"                    # spawn a Claude agent
 overmind run --type session --provider claude        # interactive Claude session
 overmind send <id> "message"                         # send message to session
+overmind send <id> "msg" --wait                      # send and wait for response
+overmind send <id> "msg" --wait --json               # return full result as JSON
+overmind send <id> "msg" --wait --timeout 120000     # custom timeout (ms)
+overmind subscribe <id>                              # stream events as NDJSON
 overmind attach <id>                                 # attach to session (TUI)
 overmind ps                                          # list all missions
 overmind ps --tree                                   # show parent-child hierarchy
@@ -86,6 +90,35 @@ overmind ps --tree                                   # visualize hierarchy
 overmind kill --cascade <id>                         # depth-first kill tree
 ```
 
+### Event Streaming
+
+```bash
+# Blocking send: wait for the agent to respond
+overmind send <id> "fix the typos" --wait
+# => "Fixed 3 typos in README.md"
+
+# Full result as JSON (includes cost, duration)
+overmind send <id> "fix the typos" --wait --json
+# => {"text":"Fixed 3 typos","duration_ms":4200,"cost_usd":0.03}
+
+# Subscribe to all events from a mission (NDJSON, one JSON object per line)
+overmind subscribe <id>
+# => {"type":"assistant","message":{"content":[{"type":"text","text":"Working on it..."}]}}
+# => {"type":"result","result":"Done","duration_ms":100,"cost_usd":0.01}
+# => {"type":"exit","status":"stopped","exit_code":0}
+```
+
+Programmatic PubSub from Elixir:
+
+```elixir
+Overmind.PubSub.subscribe(mission_id)
+
+receive do
+  {:mission_event, ^mission_id, {:text, text}, _raw} -> IO.puts(text)
+  {:mission_exit, ^mission_id, status, code} -> IO.puts("Exited: #{status}")
+end
+```
+
 ## Testing
 
 ```bash
@@ -105,6 +138,7 @@ mix e2e            # full E2E tests (daemon, raw commands, claude, sessions)
 | **M2** | Self-Healing | Done |
 | **M2.5** | Orchestration Primitives | Done |
 | **M3** | Declarative Config | Done |
+| **M3.5** | Event Streaming | Done |
 | M4 | Full Isolation | |
 | M5 | Shared Akasha | |
 | M6 | Web Dashboard | |
