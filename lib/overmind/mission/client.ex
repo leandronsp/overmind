@@ -187,6 +187,7 @@ defmodule Overmind.Mission.Client do
       os_pid: os_pid,
       type: Store.lookup_type(id),
       cwd: Store.lookup_cwd(id),
+      model: Store.lookup_model(id),
       restart_policy: Store.lookup_restart_policy(id),
       restart_count: Store.lookup_restart_count(id),
       last_activity: Store.lookup_last_activity(id),

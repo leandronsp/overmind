@@ -137,6 +137,19 @@ defmodule Overmind.Mission.Store do
     end
   end
 
+  @spec insert_model(String.t(), String.t()) :: true
+  def insert_model(id, model) do
+    :ets.insert(@table, {{:model, id}, model})
+  end
+
+  @spec lookup_model(String.t()) :: String.t() | nil
+  def lookup_model(id) do
+    case :ets.lookup(@table, {:model, id}) do
+      [{{:model, ^id}, model}] -> model
+      [] -> nil
+    end
+  end
+
   @spec insert_cwd(String.t(), String.t()) :: true
   def insert_cwd(id, cwd) do
     :ets.insert(@table, {{:cwd, id}, cwd})
@@ -236,6 +249,7 @@ defmodule Overmind.Mission.Store do
     :ets.delete(@table, {:session_id, id})
     :ets.delete(@table, {:attached, id})
     :ets.delete(@table, {:cwd, id})
+    :ets.delete(@table, {:model, id})
     :ets.delete(@table, {:name, id})
     :ets.delete(@table, {:restart_policy, id})
     :ets.delete(@table, {:restart_count, id})

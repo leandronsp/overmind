@@ -60,6 +60,22 @@ defmodule Overmind.MissionTest do
       assert is_integer(info.os_pid)
       assert info.os_pid > 0
     end
+
+    test "stores model in ETS and returns in info" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60", model: "haiku")
+
+      {:ok, info} = Client.get_info(id)
+      assert info.model == "haiku"
+    end
+
+    test "model defaults to nil when not provided" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60")
+
+      {:ok, info} = Client.get_info(id)
+      assert info.model == nil
+    end
   end
 
   describe "command chains" do

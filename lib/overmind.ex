@@ -17,6 +17,7 @@ defmodule Overmind do
     type = Keyword.get(opts, :type, :task)
     cwd = Keyword.get(opts, :cwd)
     name = Keyword.get(opts, :name)
+    model = Keyword.get(opts, :model)
     restart_policy = Keyword.get(opts, :restart_policy, :never)
     max_restarts = Keyword.get(opts, :max_restarts, 5)
     max_seconds = Keyword.get(opts, :max_seconds, 60)
@@ -29,6 +30,7 @@ defmodule Overmind do
          :ok <- validate_restart_policy(restart_policy),
          {:ok, resolved_parent} <- validate_parent(parent) do
       start_mission(command, provider, type, cwd, name,
+        model: model,
         restart_policy: restart_policy,
         max_restarts: max_restarts,
         max_seconds: max_seconds,

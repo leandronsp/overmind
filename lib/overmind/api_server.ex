@@ -22,6 +22,7 @@ defmodule Overmind.APIServer do
       [type: type, provider: provider]
       |> maybe_add_cwd(cwd)
       |> maybe_add_name(name)
+      |> maybe_add_model(Map.get(args, "model"))
       |> maybe_add_restart(Map.get(args, "restart"))
       |> maybe_add_int(:max_restarts, Map.get(args, "max_restarts"))
       |> maybe_add_int(:max_seconds, Map.get(args, "max_seconds"))
@@ -293,6 +294,9 @@ defmodule Overmind.APIServer do
   # Use :null atom to get proper JSON null output.
   defp nil_to_null(nil), do: :null
   defp nil_to_null(val), do: val
+
+  defp maybe_add_model(opts, nil), do: opts
+  defp maybe_add_model(opts, model), do: Keyword.put(opts, :model, model)
 
   defp maybe_add_parent(opts, nil), do: opts
   defp maybe_add_parent(opts, parent), do: Keyword.put(opts, :parent, parent)

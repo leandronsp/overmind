@@ -14,6 +14,7 @@ defmodule Overmind.Mission do
     :session_id,
     :cwd,
     :name,
+    :model,
     :restart_timer_ref,
     :last_activity_at,
     :activity_timer_ref,
@@ -42,6 +43,7 @@ defmodule Overmind.Mission do
           session_id: String.t() | nil,
           cwd: String.t() | nil,
           name: String.t(),
+          model: String.t() | nil,
           type: :task | :session,
           logs: String.t(),
           line_buffer: String.t(),
@@ -83,6 +85,7 @@ defmodule Overmind.Mission do
     type = Keyword.get(opts, :type, :task)
     cwd = Keyword.get(opts, :cwd)
     name = Keyword.get(opts, :name) || Overmind.Mission.Name.generate()
+    model = Keyword.get(opts, :model)
     restart_policy = Keyword.get(opts, :restart_policy, :never)
     max_restarts = Keyword.get(opts, :max_restarts, 5)
     max_seconds = Keyword.get(opts, :max_seconds, 60)
@@ -97,6 +100,7 @@ defmodule Overmind.Mission do
       type: type,
       cwd: cwd,
       name: name,
+      model: model,
       restart_policy: restart_policy,
       max_restarts: max_restarts,
       max_seconds: max_seconds,
@@ -113,11 +117,11 @@ defmodule Overmind.Mission do
   @impl true
   def init(%{
     id: id, command: command, provider: provider, type: type, cwd: cwd, name: name,
-    restart_policy: restart_policy, max_restarts: max_restarts, max_seconds: max_seconds,
+    model: model, restart_policy: restart_policy, max_restarts: max_restarts, max_seconds: max_seconds,
     backoff_ms: backoff_ms, activity_timeout: activity_timeout, parent: parent
   }) do
     Process.flag(:trap_exit, true)
-    port_command = build_port_command(type, provider, command)
+    port_command = build_port_command(type, provider, command, model)
     port_opts = [:binary, :exit_status, :stderr_to_stdout] ++ build_env(id, name) ++ maybe_cd(cwd)
     port = Port.open({:spawn, port_command}, port_opts)
     {:os_pid, os_pid} = Port.info(port, :os_pid)
@@ -127,6 +131,7 @@ defmodule Overmind.Mission do
     Store.insert_name(id, name)
     Store.insert_restart_policy(id, restart_policy)
     maybe_store_cwd(id, cwd)
+    maybe_store_model(id, model)
     maybe_store_parent(id, parent)
     send_initial_prompt(type, port, provider, command)
 
@@ -144,6 +149,7 @@ defmodule Overmind.Mission do
        type: type,
        cwd: cwd,
        name: name,
+       model: model,
        restart_policy: restart_policy,
        max_restarts: max_restarts,
        max_seconds: max_seconds,
@@ -292,7 +298,7 @@ defmodule Overmind.Mission do
     marker = "--- restart ##{count} at #{timestamp} ---\n"
     now_mono = System.monotonic_time(:millisecond)
 
-    port_command = build_port_command(state.type, state.provider, state.command, state.session_id)
+    port_command = build_port_command(state.type, state.provider, state.command, state.model, state.session_id)
     port_opts = [:binary, :exit_status, :stderr_to_stdout] ++ build_env(state.id, state.name) ++ maybe_cd(state.cwd)
     port = Port.open({:spawn, port_command}, port_opts)
     {:os_pid, os_pid} = Port.info(port, :os_pid)
@@ -406,6 +412,9 @@ defmodule Overmind.Mission do
   defp maybe_store_cwd(_id, nil), do: :ok
   defp maybe_store_cwd(id, cwd), do: Store.insert_cwd(id, cwd)
 
+  defp maybe_store_model(_id, nil), do: :ok
+  defp maybe_store_model(id, model), do: Store.insert_model(id, model)
+
   defp maybe_store_parent(_id, nil), do: :ok
   defp maybe_store_parent(id, parent_id), do: Store.insert_parent(id, parent_id)
 
@@ -415,16 +424,16 @@ defmodule Overmind.Mission do
 
   defp send_initial_prompt(_, _, _, _), do: :ok
 
-  defp build_port_command(type, provider, command) do
-    build_port_command(type, provider, command, nil)
+  defp build_port_command(type, provider, command, model) do
+    build_port_command(type, provider, command, model, nil)
   end
 
-  defp build_port_command(:session, provider, _command, session_id) do
-    provider.build_session_command(session_id: session_id)
+  defp build_port_command(:session, provider, _command, model, session_id) do
+    provider.build_session_command(session_id: session_id, model: model)
   end
 
-  defp build_port_command(:task, provider, command, _session_id) do
-    provider.build_command(command) <> " < /dev/null"
+  defp build_port_command(:task, provider, command, model, _session_id) do
+    provider.build_command(command, model: model) <> " < /dev/null"
   end
 
   # Restart policy dispatch: manual stop always wins, then policy, then budget.
