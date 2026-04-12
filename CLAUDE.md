@@ -29,7 +29,7 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │       ├── formatter.ex         # PS table and tree rendering (format_ps, format_ps_tree)
 │       ├── mission.ex           # GenServer per spawned process (Port)
 │       ├── mission/
-│       │   ├── client.ex        # Client API (get_logs, get_result, stop, kill, wait, kill_cascade, pause, info)
+│       │   ├── client.ex        # Client API (get_logs, get_result, stop, kill, wait, kill_cascade, pause, info, send_and_wait)
 │       │   ├── store.ex         # ETS operations for mission state
 │       │   └── name.ex          # Agent name generator (adjective-noun)
 │       ├── blueprint.ex         # Blueprint public API (agents, apply)
@@ -37,6 +37,7 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │       │   ├── parser.ex        # TOML parser with validation
 │       │   ├── dag.ex           # Kahn's algorithm DAG topo sort
 │       │   └── runner.ex        # Blueprint Runner GenServer (async pipeline)
+│       ├── pubsub.ex            # Registry-based pub/sub for mission events
 │       ├── provider.ex          # Provider behaviour (build_command, parse_line, format_for_logs)
 │       ├── provider/
 │       │   ├── raw.ex           # Raw shell commands (wraps with sh -c)
@@ -48,6 +49,7 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │   ├── overmind/
 │   │   ├── api_server_test.exs
 │   │   ├── mission_test.exs
+│   │   ├── pubsub_test.exs
 │   │   ├── mission/
 │   │   │   ├── store_test.exs
 │   │   │   └── name_test.exs
@@ -59,7 +61,7 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │   │   └── provider/
 │   │       ├── raw_test.exs
 │   │       └── claude_test.exs
-│   └── support/                 # Test helpers (TestClaude provider, MissionHelper)
+│   └── support/                 # Test helpers (TestClaude, TestSession, TestSilentSession, MissionHelper)
 ├── .claude/
 │   ├── agents/
 │   │   ├── scout.md             # Read-only codebase explorer
@@ -103,6 +105,8 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 - **Self-Healing**: Restart policies (`:never`, `:on_failure`, `:always`), exponential backoff, stall detection via activity timeout
 - **Orchestration**: Parent hierarchy (`--parent`), `wait` (monitor-based blocking), `kill --cascade` (depth-first), `kill --all`, `ps --tree`, `result` (structured output from completed missions)
 - **Blueprint**: TOML-based declarative config. `Blueprint.apply/1` validates synchronously, starts async Runner GenServer. Runner registers in ETS as `:blueprint` type, spawns a worker process for the pipeline loop. All existing commands (wait, logs, ps, stop, kill) work on blueprint runners.
+- **PubSub**: Registry-based pub/sub (`Overmind.PubSub`). Mission broadcasts `{:mission_event, id, event, raw}` on each parsed port line and `{:mission_exit, id, status, code}` on exit/kill
+- **Event Streaming**: `subscribe` command opens a long-lived socket connection, streams NDJSON events. `send --wait` blocks until `:result` event via PubSub
 - **Self-Awareness**: Missions receive `OVERMIND_MISSION_ID` and `OVERMIND_MISSION_NAME` env vars
 - **Name Resolution**: `Store.resolve_id/1` — all public APIs accept id or agent name
 
