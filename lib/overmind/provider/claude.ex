@@ -2,17 +2,24 @@ defmodule Overmind.Provider.Claude do
   @moduledoc false
   @behaviour Overmind.Provider
 
-  @spec build_command(String.t()) :: String.t()
-  def build_command(prompt) do
+  @spec build_command(String.t(), keyword()) :: String.t()
+  def build_command(prompt, opts \\ []) do
     escaped = String.replace(prompt, "'", "'\\''")
-    "claude -p '#{escaped}' --output-format stream-json --verbose"
+    base = "claude -p '#{escaped}' --output-format stream-json --verbose"
+    maybe_model(base, Keyword.get(opts, :model))
   end
 
   @spec build_session_command(keyword()) :: String.t()
   def build_session_command(opts \\ []) do
     base = "claude -p --input-format stream-json --output-format stream-json --verbose"
-    maybe_resume(base, Keyword.get(opts, :session_id))
+
+    base
+    |> maybe_model(Keyword.get(opts, :model))
+    |> maybe_resume(Keyword.get(opts, :session_id))
   end
+
+  defp maybe_model(cmd, nil), do: cmd
+  defp maybe_model(cmd, model), do: cmd <> " --model #{model}"
 
   defp maybe_resume(cmd, nil), do: cmd
   defp maybe_resume(cmd, session_id), do: cmd <> " --resume #{session_id}"

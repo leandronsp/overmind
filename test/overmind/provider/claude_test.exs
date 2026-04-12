@@ -13,6 +13,21 @@ defmodule Overmind.Provider.ClaudeTest do
       assert Claude.build_command("what's up") ==
                "claude -p 'what'\\''s up' --output-format stream-json --verbose"
     end
+
+    test "includes --model when model opt is provided" do
+      assert Claude.build_command("hello", model: "haiku") ==
+               "claude -p 'hello' --output-format stream-json --verbose --model haiku"
+    end
+
+    test "no --model when model opt is nil" do
+      cmd = Claude.build_command("hello", model: nil)
+      refute cmd =~ "--model"
+    end
+
+    test "no --model when opts is empty" do
+      cmd = Claude.build_command("hello", [])
+      refute cmd =~ "--model"
+    end
   end
 
   describe "build_session_command/1" do
@@ -33,6 +48,22 @@ defmodule Overmind.Provider.ClaudeTest do
     test "no --resume when session_id is nil" do
       cmd = Claude.build_session_command(session_id: nil)
       refute cmd =~ "--resume"
+    end
+
+    test "includes --model when model opt is provided" do
+      cmd = Claude.build_session_command(model: "sonnet")
+      assert cmd =~ "--model sonnet"
+    end
+
+    test "includes --model and --resume together" do
+      cmd = Claude.build_session_command(session_id: "sess-1", model: "opus")
+      assert cmd =~ "--model opus"
+      assert cmd =~ "--resume sess-1"
+    end
+
+    test "no --model when model opt is nil" do
+      cmd = Claude.build_session_command(model: nil)
+      refute cmd =~ "--model"
     end
   end
 
