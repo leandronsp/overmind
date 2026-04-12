@@ -64,7 +64,11 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │   ├── agents/
 │   │   ├── scout.md             # Read-only codebase explorer
 │   │   ├── code-reviewer.md     # Staff Engineer reviewer (Elixir + Shell)
-│   │   └── plan-reviewer.md     # Implementation plan stress-tester
+│   │   ├── plan-reviewer.md     # Implementation plan stress-tester
+│   │   ├── security-reviewer.md # Security reviewer (injection, ports, sockets)
+│   │   ├── performance-reviewer.md # Performance reviewer (GenServer, ETS, Port I/O)
+│   │   ├── quality-reviewer.md  # Quality reviewer (idioms, OTP, naming, tests)
+│   │   └── review-auditor.md    # Red team auditor (reviews the reviewers)
 │   ├── rules/
 │   │   ├── git.md               # Git conventions (commits, branches, staging)
 │   │   ├── testing.md           # ExUnit/TDD conventions
@@ -78,7 +82,10 @@ Kubernetes for AI Agents. Local-first runtime that treats AI agents as supervise
 │       ├── learn/SKILL.md       # Session learning extractor
 │       ├── po/SKILL.md          # Product Owner (GitHub issue writer)
 │       ├── pr/SKILL.md          # Pull request creator
-│       └── overmind/SKILL.md   # Orchestrator (multi-agent task decomposition)
+│       ├── overmind/SKILL.md   # Orchestrator (multi-agent task decomposition)
+│       ├── bugfix/SKILL.md     # Bug hunter with TDD reproduction
+│       ├── pair/SKILL.md       # TDD pair programming (driver/navigator)
+│       └── pair-review/SKILL.md # Interactive PR file-by-file review
 ├── test_e2e.sh                  # E2E test script (daemon + raw + claude + session)
 ├── test_smoke.sh                # Smoke test (build, start, run, ps, shutdown)
 ├── mix.exs
