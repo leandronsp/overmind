@@ -130,6 +130,17 @@ defmodule Overmind.APIServer do
     end
   end
 
+  def dispatch(%{"cmd" => "send", "args" => %{"wait" => true}} = req) do
+    id = get_in(req, ["args", "id"])
+    message = get_in(req, ["args", "message"])
+    timeout = get_in(req, ["args", "timeout"]) || 60_000
+
+    case Overmind.send_and_wait(id, message, timeout) do
+      {:ok, result} -> %{"ok" => format_result(result)}
+      {:error, reason} -> %{"error" => to_string(reason)}
+    end
+  end
+
   def dispatch(%{"cmd" => "send"} = req) do
     id = get_in(req, ["args", "id"])
     message = get_in(req, ["args", "message"])
@@ -321,6 +332,14 @@ defmodule Overmind.APIServer do
 
   defp maybe_add_to_map(map, _key, nil), do: map
   defp maybe_add_to_map(map, key, val), do: Map.put(map, key, val)
+
+  defp format_result(result) do
+    %{
+      "text" => result.text,
+      "duration_ms" => result.duration_ms,
+      "cost_usd" => result.cost_usd
+    }
+  end
 
   defp format_blueprint_error({:missing_command, name}), do: "missing command for agent: #{name}"
   defp format_blueprint_error({:unknown_dependency, name, dep}), do: "agent #{name} depends on unknown agent: #{dep}"

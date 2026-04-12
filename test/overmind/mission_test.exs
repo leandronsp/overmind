@@ -1094,6 +1094,14 @@ defmodule Overmind.MissionTest do
       assert {:error, :not_session} = Client.send_and_wait(id, "hello")
     end
 
+    test "accessible via public Overmind.send_and_wait/3" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "", type: :session, provider: Overmind.Provider.TestSession)
+      Process.sleep(50)
+
+      assert {:ok, %{text: "Done"}} = Overmind.send_and_wait(id, "do it")
+    end
+
     test "returns exited when mission is killed before result" do
       id = Mission.generate_id()
       {:ok, _pid} = Mission.start_link(id: id, command: "", type: :session, provider: Overmind.Provider.TestSilentSession)

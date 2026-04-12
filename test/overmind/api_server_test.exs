@@ -276,6 +276,22 @@ defmodule Overmind.APIServerTest do
       assert %{"error" => "not_session"} = result
     end
 
+    test "send with wait blocks until result" do
+      {:ok, id} = Overmind.run("", type: :session, provider: Overmind.Provider.TestSession)
+      Process.sleep(50)
+
+      result = APIServer.dispatch(%{"cmd" => "send", "args" => %{"id" => id, "message" => "hi", "wait" => true}})
+      assert %{"ok" => %{"text" => "Done"}} = result
+    end
+
+    test "send with wait and timeout returns error" do
+      {:ok, id} = Overmind.run("", type: :session, provider: Overmind.Provider.TestSilentSession)
+      Process.sleep(50)
+
+      result = APIServer.dispatch(%{"cmd" => "send", "args" => %{"id" => id, "message" => "hi", "wait" => true, "timeout" => 100}})
+      assert %{"error" => "timeout"} = result
+    end
+
     test "pause returns session_id and cwd" do
       {:ok, id} = Overmind.run("", type: :session, cwd: "/tmp")
       Process.sleep(50)

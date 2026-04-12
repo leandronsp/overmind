@@ -144,6 +144,12 @@ defmodule Overmind do
     id |> Store.resolve_id() |> Client.send_message(message)
   end
 
+  @spec send_and_wait(String.t(), String.t(), non_neg_integer()) ::
+          {:ok, map()} | {:error, :not_found | :not_running | :not_session | :paused | :timeout | :exited}
+  def send_and_wait(id, message, timeout \\ 60_000) do
+    id |> Store.resolve_id() |> Client.send_and_wait(message, timeout)
+  end
+
   @spec children(String.t()) :: [map()]
   def children(id) do
     resolved = Store.resolve_id(id)
