@@ -85,6 +85,19 @@ defmodule Overmind.Mission.Client do
     end
   end
 
+  @spec send_and_wait(String.t(), String.t(), non_neg_integer()) ::
+          {:ok, map()} | {:error, :not_found | :not_running | :not_session | :paused | :timeout | :exited}
+  def send_and_wait(id, message, timeout \\ 60_000) do
+    # Subscribe before sending to avoid race: if the result broadcasts
+    # before we subscribe, we'd miss it and block until timeout.
+    Overmind.PubSub.subscribe(id)
+
+    case send_message(id, message) do
+      :ok -> receive_result(id, timeout)
+      error -> error
+    end
+  end
+
   @spec pause(String.t()) :: {:ok, String.t() | nil} | {:error, :not_found | :not_running | :not_session}
   def pause(id) do
     case {Store.lookup(id), Store.lookup_type(id)} do
@@ -230,6 +243,18 @@ defmodule Overmind.Mission.Client do
     events
     |> Enum.reverse()
     |> Enum.find(%{}, &(&1["type"] == "result"))
+  end
+
+  defp receive_result(id, timeout) do
+    receive do
+      {:mission_event, ^id, {:result, result}, _raw} ->
+        {:ok, result}
+
+      {:mission_exit, ^id, _status, _code} ->
+        {:error, :exited}
+    after
+      timeout -> {:error, :timeout}
+    end
   end
 
   # Paused = human attached via CLI (attach command). Reject programmatic

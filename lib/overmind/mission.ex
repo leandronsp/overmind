@@ -203,6 +203,7 @@ defmodule Overmind.Mission do
   @impl true
   def handle_call({:kill, :sigkill}, _from, %{port: nil} = state) do
     cancel_timer(state.restart_timer_ref)
+    Overmind.PubSub.broadcast(state.id, {:mission_exit, state.id, :killed, nil})
     Store.cleanup(state.id)
     {:stop, :normal, :ok, %{state | restart_timer_ref: nil}}
   end
@@ -210,6 +211,7 @@ defmodule Overmind.Mission do
   @impl true
   def handle_call({:kill, :sigkill}, _from, state) do
     System.cmd("kill", ["-9", Integer.to_string(state.os_pid)])
+    Overmind.PubSub.broadcast(state.id, {:mission_exit, state.id, :killed, nil})
     Store.cleanup(state.id)
     {:stop, :normal, :ok, %{state | port: nil}}
   end

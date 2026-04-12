@@ -1068,4 +1068,42 @@ defmodule Overmind.MissionTest do
       assert Overmind.Mission.Store.lookup_restart_count(id) == 1
     end
   end
+
+  describe "send_and_wait/3" do
+    test "blocks until result event and returns the result" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "", type: :session, provider: Overmind.Provider.TestSession)
+      Process.sleep(50)
+
+      assert {:ok, %{text: "Done", duration_ms: 100, cost_usd: 0.01}} = Client.send_and_wait(id, "do it")
+    end
+
+    test "returns timeout when no result within deadline" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "", type: :session, provider: Overmind.Provider.TestSilentSession)
+      Process.sleep(50)
+
+      assert {:error, :timeout} = Client.send_and_wait(id, "hello", 100)
+    end
+
+    test "returns error for non-session mission" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "sleep 60", type: :task)
+      Process.sleep(50)
+
+      assert {:error, :not_session} = Client.send_and_wait(id, "hello")
+    end
+
+    test "returns exited when mission is killed before result" do
+      id = Mission.generate_id()
+      {:ok, _pid} = Mission.start_link(id: id, command: "", type: :session, provider: Overmind.Provider.TestSilentSession)
+      Process.sleep(50)
+
+      task = Task.async(fn -> Client.send_and_wait(id, "hello", 5000) end)
+      Process.sleep(50)
+      Client.kill(id)
+
+      assert {:error, :exited} = Task.await(task, 2000)
+    end
+  end
 end
