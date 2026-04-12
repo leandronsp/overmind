@@ -234,6 +234,7 @@ defmodule Overmind.Mission do
         {event, raw} = state.provider.parse_line(line)
         formatted = state.provider.format_for_logs(event)
         new_sid = extract_session_id(event, sid)
+        Overmind.PubSub.broadcast(state.id, {:mission_event, state.id, event, raw})
         {logs_acc <> formatted, maybe_append(events_acc, raw), new_sid}
       end)
 
@@ -270,6 +271,7 @@ defmodule Overmind.Mission do
     cancel_timer(state.activity_timer_ref)
     Store.insert_exit_code(state.id, code)
     status = exit_status(state.stopping, code)
+    Overmind.PubSub.broadcast(state.id, {:mission_exit, state.id, status, code})
     handle_port_exit(should_restart?(state, status), state, status)
   end
 
