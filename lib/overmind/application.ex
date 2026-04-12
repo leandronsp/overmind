@@ -7,6 +7,7 @@ defmodule Overmind.Application do
     :ets.new(:overmind_missions, [:set, :public, :named_table])
 
     children = [
+      {Registry, keys: :duplicate, name: Overmind.PubSub.Registry},
       {DynamicSupervisor, name: Overmind.MissionSupervisor, strategy: :one_for_one}
     ]
 
