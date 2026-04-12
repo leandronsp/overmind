@@ -435,6 +435,42 @@ defmodule Overmind.APIServerTest do
     test "cleans up socket file on stop", %{socket_path: path} do
       assert File.exists?(path)
     end
+
+    test "subscribe streams events as NDJSON lines", %{socket_path: path} do
+      # Start a mission that waits for input then outputs and exits
+      {:ok, id} = Overmind.run("", type: :session, provider: Overmind.Provider.TestSession)
+      Process.sleep(50)
+
+      # Subscribe via socket before triggering output
+      {:ok, sock} = :gen_tcp.connect({:local, path}, 0, [:binary, active: false, packet: :line])
+      escaped = String.replace(id, "\"", "\\\"")
+      :gen_tcp.send(sock, ~s({"cmd":"subscribe","args":{"id":"#{escaped}"}}\n))
+
+      # Trigger output by sending a message (TestSession reads a line, outputs result, exits)
+      Overmind.send(id, "go")
+
+      # Read streamed lines until socket closes
+      lines = read_lines(sock, [], 2000)
+      :gen_tcp.close(sock)
+
+      # Should have received at least the exit event
+      assert length(lines) >= 1
+      last = List.last(lines)
+      assert %{"type" => "exit"} = :json.decode(last)
+    end
+  end
+
+    test "subscribe returns error for unknown mission" do
+      result = APIServer.dispatch(%{"cmd" => "subscribe", "args" => %{"id" => "nonexist"}})
+      assert %{"error" => "not_found"} = result
+    end
+
+  defp read_lines(sock, acc, timeout) do
+    case :gen_tcp.recv(sock, 0, timeout) do
+      {:ok, line} -> read_lines(sock, acc ++ [String.trim(line)], timeout)
+      {:error, :closed} -> acc
+      {:error, :timeout} -> acc
+    end
   end
 
   defp write_toml(content) do

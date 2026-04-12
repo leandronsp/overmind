@@ -215,6 +215,16 @@ defmodule Overmind.APIServer do
     %{"ok" => true}
   end
 
+  def dispatch(%{"cmd" => "subscribe"} = req) do
+    id = get_in(req, ["args", "id"])
+    resolved = Overmind.Mission.Store.resolve_id(id)
+
+    case Overmind.Mission.Store.lookup(resolved) do
+      :not_found -> %{"error" => "not_found"}
+      _ -> {:stream, resolved}
+    end
+  end
+
   def dispatch(%{"cmd" => cmd}) do
     %{"error" => "unknown command: #{cmd}"}
   end
@@ -269,24 +279,59 @@ defmodule Overmind.APIServer do
 
   # One request per connection: read JSON line, dispatch, respond, close.
   # 5s timeout guards against hung clients holding the socket.
+  # Subscribe commands enter a streaming loop instead of the normal path.
   defp handle_client(client) do
     case :gen_tcp.recv(client, 0, 5000) do
       {:ok, line} ->
-        response =
-          line
-          |> String.trim()
-          |> :json.decode()
-          |> dispatch()
-          |> :json.encode()
-          |> IO.iodata_to_binary()
+        case line |> String.trim() |> :json.decode() |> dispatch() do
+          {:stream, mission_id} ->
+            stream_events(client, mission_id)
 
-        :gen_tcp.send(client, response <> "\n")
+          response ->
+            encoded = response |> :json.encode() |> IO.iodata_to_binary()
+            :gen_tcp.send(client, encoded <> "\n")
+        end
 
       {:error, _} ->
         :ok
     end
 
     :gen_tcp.close(client)
+  end
+
+  # Subscribe to mission events and write NDJSON lines until mission exits
+  # or the client disconnects.
+  defp stream_events(client, mission_id) do
+    Overmind.PubSub.subscribe(mission_id)
+    stream_loop(client, mission_id)
+  end
+
+  defp stream_loop(client, mission_id) do
+    receive do
+      {:mission_event, ^mission_id, event, raw} ->
+        line = format_stream_event(event, raw)
+        case :gen_tcp.send(client, line <> "\n") do
+          :ok -> stream_loop(client, mission_id)
+          {:error, _} -> :ok
+        end
+
+      {:mission_exit, ^mission_id, status, exit_code} ->
+        line = :json.encode(%{"type" => "exit", "status" => to_string(status), "exit_code" => nil_to_null(exit_code)})
+               |> IO.iodata_to_binary()
+        :gen_tcp.send(client, line <> "\n")
+    end
+  end
+
+  defp format_stream_event({type, _content}, raw) when type in [:text, :tool_use, :thinking, :result, :system, :tool_result] do
+    :json.encode(raw) |> IO.iodata_to_binary()
+  end
+
+  defp format_stream_event({:plain, text}, _raw) do
+    :json.encode(%{"type" => "plain", "text" => text}) |> IO.iodata_to_binary()
+  end
+
+  defp format_stream_event({:ignored, _}, raw) do
+    :json.encode(raw) |> IO.iodata_to_binary()
   end
 
   defp parse_type("session"), do: :session
